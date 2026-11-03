@@ -9,7 +9,7 @@ MODEL_ID = os.environ.get(
 
 image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.11")
-    .pip_install("vllm==0.9.2")
+    .pip_install("vllm==0.9.2", "transformers==4.53.3")
 )
 
 @app.function(
@@ -23,13 +23,18 @@ image = (
 )
 @modal.web_server(8000, startup_timeout=900)
 def serve():
+    server_env = os.environ.copy()
+    # vLLM supports VLLM_API_KEY; using env avoids printing the secret in CLI-arg logs.
+    server_env["VLLM_API_KEY"] = server_env.pop("MODEL_API_KEY")
     subprocess.Popen([
         "python", "-m", "vllm.entrypoints.openai.api_server",
         "--model", MODEL_ID,
         "--host", "0.0.0.0",
         "--port", "8000",
-        "--api-key", os.environ["MODEL_API_KEY"],
         "--max-model-len", "8192",
         "--gpu-memory-utilization", "0.88",
+        "--enforce-eager",
+        "--enable-reasoning",
+        "--reasoning-parser", "qwen3",
         "--trust-remote-code",
-    ])
+    ], env=server_env)
