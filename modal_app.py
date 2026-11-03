@@ -9,7 +9,7 @@ MODEL_ID = os.environ.get(
 
 image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.11")
-    .pip_install("vllm==0.9.2", "transformers==4.53.3")
+    .pip_install("vllm==0.9.2")
 )
 
 @app.function(

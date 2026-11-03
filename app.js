@@ -21,7 +21,7 @@ async function api(path, options={}){
 }
 function active(){return conversations.find(c=>c.id===currentId)}
 function saveLocallyAuthOnly(){saveSession()}
-function renderHistory(){historyEl.innerHTML='';conversations.forEach(c=>{const b=document.createElement('button');b.className='history-item'+(c.id===currentId?' active':'');b.textContent=c.title||'Cuộc trò chuyện mới';b.title=b.textContent;b.onclick=()=>openChat(c.id);historyEl.appendChild(b)})}
+function renderHistory(){historyEl.innerHTML='';$('#clearHistory').hidden=!conversations.length;conversations.forEach(c=>{const row=document.createElement('div');row.className='history-row';const b=document.createElement('button');b.className='history-item'+(c.id===currentId?' active':'');b.textContent=c.title||'Cuộc trò chuyện mới';b.title=b.textContent;b.onclick=()=>openChat(c.id);row.appendChild(b);const del=document.createElement('button');del.className='history-delete';del.type='button';del.title='Xóa cuộc trò chuyện';del.setAttribute('aria-label',`Xóa ${c.title||'cuộc trò chuyện'}`);del.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';del.disabled=busy;del.onclick=e=>{e.stopPropagation();deleteConversation(c.id)};row.appendChild(del);historyEl.appendChild(row)})}
 function scrollBottom(){const box=$('.conversation');box.scrollTop=box.scrollHeight}
 function addMessage(role,text,typing=false){const row=document.createElement('div');row.className=`message ${role}`;if(role==='assistant'){const av=document.createElement('div');av.className='msg-avatar';av.textContent='✳';row.appendChild(av)}const bubble=document.createElement('div');bubble.className='bubble';bubble.innerHTML=typing?'<span class="typing">Đang suy nghĩ…</span>':formatted(text);row.appendChild(bubble);messagesEl.appendChild(row);scrollBottom();return bubble}
 function renderMessages(){messagesEl.innerHTML='';const c=active();welcome.style.display=c?.messages?.length?'none':'';(c?.messages||[]).forEach(m=>addMessage(m.role,m.content));scrollBottom()}
@@ -33,6 +33,16 @@ async function loadConversations(){
 }
 async function persistConversation(c){
  await api('/rest/v1/conversations?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:c.id,title:c.title,messages:c.messages})});
+}
+async function deleteConversation(id){
+ if(busy)return;const c=conversations.find(x=>x.id===id);if(!c)return;
+ if(!window.confirm(`Xóa cuộc trò chuyện “${c.title||'Cuộc trò chuyện mới'}”? Thao tác này không thể hoàn tác.`))return;
+ try{await api(`/rest/v1/conversations?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});conversations=conversations.filter(x=>x.id!==id);if(currentId===id)currentId=conversations[0]?.id||null;renderHistory();renderMessages()}catch(err){window.alert(`Không xóa được lịch sử: ${err.message}`)}
+}
+async function clearAllHistory(){
+ if(busy||!conversations.length)return;
+ if(!window.confirm('Xóa toàn bộ lịch sử chat của tài khoản này? Thao tác này không thể hoàn tác.'))return;
+ try{const userId=session?.user?.id;if(!userId)throw new Error('Không xác định được tài khoản hiện tại.');await api(`/rest/v1/conversations?user_id=eq.${encodeURIComponent(userId)}`,{method:'DELETE',headers:{Prefer:'return=minimal'}});conversations=[];currentId=null;renderHistory();renderMessages()}catch(err){window.alert(`Không xóa được lịch sử: ${err.message}`)}
 }
 function showAuth(message=''){$('#authOverlay').classList.add('open');$('#authError').textContent=message;$('#emailInput').focus()}
 function hideAuth(){$('#authOverlay').classList.remove('open')}
@@ -46,7 +56,7 @@ $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn
 async function bootUser(){
  try{await accessToken();$('#profileEmail').textContent=session.user?.email||'Tài khoản';hideAuth();await loadConversations();$('#status').className='status ok';$('#status span').textContent='Lịch sử đã đồng bộ'}catch(err){session=null;saveSession();showAuth(err.message)}
 }
-$('#logoutBtn').onclick=()=>{session=null;saveSession();conversations=[];currentId=null;renderHistory();renderMessages();showAuth()};
+$('#logoutBtn').onclick=()=>{session=null;saveSession();conversations=[];currentId=null;renderHistory();renderMessages();showAuth()};$('#clearHistory').onclick=clearAllHistory;
 async function send(text){
  text=(text||'').trim();if(!text||busy||!session)return;
  if(!currentId){const c={id:crypto.randomUUID(),title:text.length>42?text.slice(0,42)+'…':text,messages:[]};conversations.unshift(c);currentId=c.id;}
@@ -60,7 +70,7 @@ async function send(text){
    while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split(/\r?\n\r?\n/);buffer=events.pop()||'';for(const event of events){for(const line of event.split(/\r?\n/)){if(!line.startsWith('data:'))continue;const data=line.slice(5).trim();if(data==='[DONE]')continue;try{const j=JSON.parse(data);answer+=j.choices?.[0]?.delta?.content||'';reply.innerHTML=formatted(answer)||'<span class="typing">Đang suy nghĩ…</span>';scrollBottom()}catch{}}}}
    if(!answer)throw new Error('Model chưa trả nội dung. Kiểm tra endpoint OpenAI-compatible.');
    c.messages.push({role:'assistant',content:answer});await persistConversation(c);
- }catch(err){reply.innerHTML=`<span style="color:#e5a49d">${esc(err.message)}</span>`;if(err.message.includes('đăng nhập')||err.message.includes('Phiên'))showAuth(err.message)}finally{busy=false;$('#sendBtn').disabled=false;input.disabled=false;input.focus();scrollBottom()}
+ }catch(err){reply.innerHTML=`<span style="color:#e5a49d">${esc(err.message)}</span>`;if(err.message.includes('đăng nhập')||err.message.includes('Phiên'))showAuth(err.message)}finally{busy=false;$('#sendBtn').disabled=false;input.disabled=false;renderHistory();input.focus();scrollBottom()}
 }
 $('#chatForm').addEventListener('submit',e=>{e.preventDefault();send(input.value)});input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,180)+'px'});input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(input.value)}});
 $('#newChat').onclick=newChat;document.querySelectorAll('.suggestion').forEach(b=>b.onclick=()=>send(b.dataset.prompt));
