@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
   }
   const messages = body.messages.filter((m) =>
     m && ["system", "user", "assistant"].includes(m.role) && typeof m.content === "string"
-  );
+  ).map((m) => ({ role: m.role, content: m.content }));
   if (messages.length !== body.messages.length || messages.some((m) => m.content.length > 100_000)) {
     return Response.json({ error: "Nội dung tin nhắn không hợp lệ hoặc quá dài." }, { status: 400, headers: cors });
   }
@@ -40,10 +40,20 @@ Deno.serve(async (req: Request) => {
   if (!baseUrl || !modalKey) return Response.json({ error: "Chưa cấu hình endpoint Modal." }, { status: 503, headers: cors });
 
   try {
+    const systemPrompt = "Bạn là Trợ lý Chat, một trợ lý AI hữu ích. Hãy suy nghĩ kỹ trước khi trả lời. Mặc định trả lời bằng tiếng Việt và theo ngôn ngữ người dùng. Câu trả lời cuối phải rõ ràng, trực tiếp và tách biệt với phần suy luận do giao diện hiển thị riêng. Không tự nhận mình là Qwen, GPT hoặc một model cụ thể; nếu được hỏi tên, hãy nói bạn là Trợ lý Chat.";
+    const modelMessages = [
+      { role: "system", content: systemPrompt },
+      ...messages.filter((m) => m.role !== "system"),
+    ];
     const upstream = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${modalKey}` },
-      body: JSON.stringify({ model, messages, stream: true, temperature: 0.7 }),
+      body: JSON.stringify({
+        model,
+        messages: modelMessages,
+        stream: true,
+        temperature: 0.7,
+      }),
     });
     if (!upstream.ok) {
       const detail = (await upstream.text()).slice(0, 1000);
