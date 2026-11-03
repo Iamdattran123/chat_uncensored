@@ -9,12 +9,13 @@ MODEL_ID = os.environ.get(
 
 image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.11")
-    .pip_install("vllm==0.9.2")
+    .pip_install("vllm==0.9.2", "transformers==4.53.3")
 )
 
 @app.function(
     image=image,
     gpu="A10G",
+    secrets=[modal.Secret.from_name("model-auth")],
     timeout=3600,
     min_containers=0,
     max_containers=1,
