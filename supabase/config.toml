@@ -1,0 +1,4 @@
+project_id = "chat_uncensored"
+
+[functions.chat]
+verify_jwt = true

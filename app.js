@@ -1,0 +1,69 @@
+const $ = (s) => document.querySelector(s);
+const welcome = $('#welcome'), messagesEl = $('#messages'), input = $('#prompt'), historyEl = $('#history');
+const cfg = window.APP_CONFIG || {};
+let session = null, conversations = [], currentId = null, busy = false;
+const SESSION_KEY = 'modal-chat-auth-session';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function formatted(text){return esc(text).replace(/```([\s\S]*?)```/g,'<pre><code>$1</code></pre>').replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>')}
+function configReady(){return /^https:\/\//.test(cfg.SUPABASE_URL||'') && cfg.SUPABASE_ANON_KEY && !String(cfg.SUPABASE_URL).includes('YOUR_PROJECT') && !String(cfg.SUPABASE_ANON_KEY).includes('YOUR_')}
+function saveSession(){session?localStorage.setItem(SESSION_KEY,JSON.stringify(session)):localStorage.removeItem(SESSION_KEY)}
+async function refreshSession(){
+ if(!session?.refresh_token)throw new Error('Phiên đăng nhập hết hạn. Hãy đăng nhập lại.');
+ const r=await fetch(`${cfg.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,{method:'POST',headers:{apikey:cfg.SUPABASE_ANON_KEY,'content-type':'application/json'},body:JSON.stringify({refresh_token:session.refresh_token})});
+ const j=await r.json();if(!r.ok)throw new Error(j.msg||j.message||j.error_description||'Phiên đăng nhập hết hạn.');
+ session={...j,expires_at:Date.now()/1000+(j.expires_in||3600)};saveSession();return session;
+}
+async function accessToken(){if(!session)throw new Error('Bạn chưa đăng nhập.');if(!session.expires_at||session.expires_at<Date.now()/1000+45)await refreshSession();return session.access_token}
+async function api(path, options={}){
+ const token=await accessToken();const r=await fetch(`${cfg.SUPABASE_URL}${path}`,{...options,headers:{apikey:cfg.SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,'content-type':'application/json',...(options.headers||{})}});
+ if(!r.ok){let j={};try{j=await r.json()}catch{};if(r.status===401){session=null;saveSession();showAuth()}throw new Error(j.message||j.msg||j.error||j.error_description||`Lỗi dịch vụ (${r.status})`)}
+ return r.status===204?null:r.json().catch(()=>null)
+}
+function active(){return conversations.find(c=>c.id===currentId)}
+function saveLocallyAuthOnly(){saveSession()}
+function renderHistory(){historyEl.innerHTML='';conversations.forEach(c=>{const b=document.createElement('button');b.className='history-item'+(c.id===currentId?' active':'');b.textContent=c.title||'Cuộc trò chuyện mới';b.title=b.textContent;b.onclick=()=>openChat(c.id);historyEl.appendChild(b)})}
+function scrollBottom(){const box=$('.conversation');box.scrollTop=box.scrollHeight}
+function addMessage(role,text,typing=false){const row=document.createElement('div');row.className=`message ${role}`;if(role==='assistant'){const av=document.createElement('div');av.className='msg-avatar';av.textContent='✳';row.appendChild(av)}const bubble=document.createElement('div');bubble.className='bubble';bubble.innerHTML=typing?'<span class="typing">Đang suy nghĩ…</span>':formatted(text);row.appendChild(bubble);messagesEl.appendChild(row);scrollBottom();return bubble}
+function renderMessages(){messagesEl.innerHTML='';const c=active();welcome.style.display=c?.messages?.length?'none':'';(c?.messages||[]).forEach(m=>addMessage(m.role,m.content));scrollBottom()}
+function openChat(id){currentId=id;renderMessages();renderHistory();$('#sidebar').classList.remove('open')}
+function newChat(){currentId=null;messagesEl.innerHTML='';welcome.style.display='';input.value='';input.focus();renderHistory();$('#sidebar').classList.remove('open')}
+async function loadConversations(){
+ const rows=await api('/rest/v1/conversations?select=id,title,messages,updated_at&order=updated_at.desc');
+ conversations=(rows||[]).map(r=>({...r,messages:Array.isArray(r.messages)?r.messages:[]}));currentId=conversations[0]?.id||null;renderHistory();renderMessages();
+}
+async function persistConversation(c){
+ await api('/rest/v1/conversations?on_conflict=id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:c.id,title:c.title,messages:c.messages})});
+}
+function showAuth(message=''){$('#authOverlay').classList.add('open');$('#authError').textContent=message;$('#emailInput').focus()}
+function hideAuth(){$('#authOverlay').classList.remove('open')}
+async function login(email,password){
+ if(!configReady())throw new Error('Chưa cấu hình Supabase. Mở README.md và điền config.js trước.');
+ const r=await fetch(`${cfg.SUPABASE_URL}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:cfg.SUPABASE_ANON_KEY,'content-type':'application/json'},body:JSON.stringify({email,password})});
+ const j=await r.json();if(!r.ok)throw new Error(j.msg||j.message||j.error_description||'Email hoặc mật khẩu chưa đúng.');
+ session={...j,expires_at:Date.now()/1000+(j.expires_in||3600)};saveSession();
+}
+$('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const btn=$('#loginBtn');btn.disabled=true;$('#authError').textContent='Đang đăng nhập…';try{await login($('#emailInput').value.trim(),$('#passwordInput').value);await bootUser()}catch(err){$('#authError').textContent=err.message}finally{btn.disabled=false}});
+async function bootUser(){
+ try{await accessToken();$('#profileEmail').textContent=session.user?.email||'Tài khoản';hideAuth();await loadConversations();$('#status').className='status ok';$('#status span').textContent='Lịch sử đã đồng bộ'}catch(err){session=null;saveSession();showAuth(err.message)}
+}
+$('#logoutBtn').onclick=()=>{session=null;saveSession();conversations=[];currentId=null;renderHistory();renderMessages();showAuth()};
+async function send(text){
+ text=(text||'').trim();if(!text||busy||!session)return;
+ if(!currentId){const c={id:crypto.randomUUID(),title:text.length>42?text.slice(0,42)+'…':text,messages:[]};conversations.unshift(c);currentId=c.id;}
+ const c=active();c.messages.push({role:'user',content:text});welcome.style.display='none';addMessage('user',text);const reply=addMessage('assistant','',true);input.value='';input.style.height='auto';busy=true;$('#sendBtn').disabled=true;input.disabled=true;renderHistory();
+ try{
+   await persistConversation(c);
+   const token=await accessToken();const r=await fetch(`${cfg.SUPABASE_URL}/functions/v1/chat`,{method:'POST',headers:{apikey:cfg.SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({messages:c.messages})});
+   if(!r.ok){let err='Yêu cầu thất bại.';try{const j=await r.json();err=j.error||j.message||err;if(j.detail)err+=' — '+j.detail}catch{}throw new Error(err)}
+   if(!r.body)throw new Error('Không nhận được luồng phản hồi.');
+   const reader=r.body.getReader(),decoder=new TextDecoder();let buffer='',answer='';
+   while(true){const {value,done}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});const events=buffer.split(/\r?\n\r?\n/);buffer=events.pop()||'';for(const event of events){for(const line of event.split(/\r?\n/)){if(!line.startsWith('data:'))continue;const data=line.slice(5).trim();if(data==='[DONE]')continue;try{const j=JSON.parse(data);answer+=j.choices?.[0]?.delta?.content||'';reply.innerHTML=formatted(answer)||'<span class="typing">Đang suy nghĩ…</span>';scrollBottom()}catch{}}}}
+   if(!answer)throw new Error('Model chưa trả nội dung. Kiểm tra endpoint OpenAI-compatible.');
+   c.messages.push({role:'assistant',content:answer});await persistConversation(c);
+ }catch(err){reply.innerHTML=`<span style="color:#e5a49d">${esc(err.message)}</span>`;if(err.message.includes('đăng nhập')||err.message.includes('Phiên'))showAuth(err.message)}finally{busy=false;$('#sendBtn').disabled=false;input.disabled=false;input.focus();scrollBottom()}
+}
+$('#chatForm').addEventListener('submit',e=>{e.preventDefault();send(input.value)});input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,180)+'px'});input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send(input.value)}});
+$('#newChat').onclick=newChat;document.querySelectorAll('.suggestion').forEach(b=>b.onclick=()=>send(b.dataset.prompt));
+$('#settingsBtn').onclick=()=>$('#overlay').classList.add('open');$('#closeModal').onclick=$('#doneBtn').onclick=()=>$('#overlay').classList.remove('open');$('#overlay').onclick=e=>{if(e.target===$('#overlay'))$('#overlay').classList.remove('open')};$('#openSide').onclick=()=>$('#sidebar').classList.add('open');$('#closeSide').onclick=()=>$('#sidebar').classList.remove('open');
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();newChat()}if(e.key==='Escape')$('#sidebar').classList.remove('open')});
+(async()=>{try{session=JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{session=null}if(session)await bootUser();else showAuth();if(!configReady())$('#authError').textContent='Chưa cấu hình Supabase — xem README.md.'})();

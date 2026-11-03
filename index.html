@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#202123">
+<title>Khung Chat — Local AI</title><link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-top"><a class="brand" href="#" aria-label="Trang chủ"><span class="brand-mark">✳</span><span>Khung Chat</span></a><button class="icon-btn collapse" id="closeSide" title="Thu gọn">◧</button></div>
+    <button class="new-chat" id="newChat"><span class="plus">＋</span> Cuộc trò chuyện mới <span class="shortcut">⌘ K</span></button>
+    <div class="side-label">GẦN ĐÂY</div><div class="history" id="history"></div>
+    <div class="side-spacer"></div>
+    <div class="privacy-note"><span class="lock">♧</span><div><strong>Model riêng của bạn</strong><small>Inference chạy trên GPU Modal khi bạn gửi chat.</small></div></div>
+    <div class="profile"><div class="avatar">U</div><div class="profile-copy"><strong id="profileEmail">Tài khoản</strong><small>Lịch sử riêng tư</small></div><button class="icon-btn" id="logoutBtn" title="Đăng xuất">⇥</button></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><button class="icon-btn menu" id="openSide" aria-label="Mở menu">☰</button><div class="model-select"><span class="model-name" id="modelName">Model của bạn</span><span class="chevron">⌄</span><span class="model-pill">MODAL</span></div><div class="top-actions"><span class="status" id="status"><i></i><span>Đang kiểm tra</span></span><button class="icon-btn" id="settingsBtn" title="Cấu hình endpoint">⚙</button></div></header>
+    <section class="conversation" id="conversation">
+      <div class="welcome" id="welcome"><div class="welcome-symbol">✳</div><h1>Bắt đầu từ điều bạn đang nghĩ.</h1><p>Một không gian chat riêng cho model bạn tự chọn và triển khai trên GPU.</p>
+        <div class="suggestions"><button class="suggestion" data-prompt="Giải thích một ý tưởng phức tạp bằng ngôn ngữ thật dễ hiểu."><span class="suggestion-icon">◈</span><span><b>Giải thích rõ ràng</b><small>Biến chủ đề khó thành dễ hiểu</small></span><span class="arrow">↗</span></button><button class="suggestion" data-prompt="Giúp tôi lên kế hoạch cho một dự án mới, chia thành các bước cụ thể."><span class="suggestion-icon">⌁</span><span><b>Lên kế hoạch</b><small>Chia mục tiêu thành các bước nhỏ</small></span><span class="arrow">↗</span></button><button class="suggestion" data-prompt="Viết một đoạn code mẫu và giải thích cách hoạt động."><span class="suggestion-icon">⌘</span><span><b>Viết và sửa code</b><small>Cùng xây dựng ý tưởng</small></span><span class="arrow">↗</span></button><button class="suggestion" data-prompt="Đưa ra vài hướng tiếp cận sáng tạo cho vấn đề này: "><span class="suggestion-icon">✧</span><span><b>Khám phá ý tưởng</b><small>Mở rộng góc nhìn của bạn</small></span><span class="arrow">↗</span></button></div>
+      </div><div class="messages" id="messages"></div>
+    </section>
+    <div class="composer-wrap"><form class="composer" id="chatForm"><textarea id="prompt" rows="1" placeholder="Nhắn tin với model của bạn..." aria-label="Tin nhắn"></textarea><div class="composer-tools"><div class="composer-hint"><span class="tiny-dot"></span><span>Model chạy qua endpoint riêng</span></div><button class="send-btn" id="sendBtn" aria-label="Gửi tin nhắn"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></form><div class="disclaimer">Model có thể mắc lỗi. Hãy kiểm tra lại thông tin quan trọng.</div></div>
+  </main>
+</div>
+<div class="auth-overlay" id="authOverlay"><section class="auth-card"><div class="welcome-symbol">✳</div><h1>Đăng nhập</h1><p>Lịch sử chat được lưu riêng theo tài khoản của bạn.</p><form id="loginForm"><label>Email<input id="emailInput" type="email" autocomplete="username" required placeholder="you@example.com"></label><label>Mật khẩu<input id="passwordInput" type="password" autocomplete="current-password" required minlength="8" placeholder="••••••••"></label><button class="done-btn" type="submit" id="loginBtn">Đăng nhập</button><div class="auth-error" id="authError"></div></form><small>Tài khoản được tạo riêng bởi quản trị viên.</small></section></div>
+<div class="overlay" id="overlay"><section class="modal"><button class="modal-x" id="closeModal">×</button><div class="modal-icon">⌘</div><h2>Kết nối model trên Modal</h2><p class="modal-lead">Thông tin model được giữ ở Supabase Edge Function. Khoá Modal không nằm trong trình duyệt.</p><div class="config-state"><span class="state-indicator"></span><span id="syncLabel">Đăng nhập để đồng bộ lịch sử riêng.</span></div><div class="code-box"><div><span>Giao diện</span><code>GitHub Pages</code></div><div><span>Đăng nhập & lịch sử</span><code>Supabase Auth + Postgres</code></div><div><span>Model</span><code>Modal GPU, tự scale về 0</code></div></div><p class="modal-foot">Xem <b>README.md</b> để cài đặt. Tài khoản Supabase sẽ có lịch sử chat riêng.</p><button class="done-btn" id="doneBtn">Đã hiểu</button></section></div>
+<script src="./config.js"></script><script src="./app.js"></script>
+</body></html>
