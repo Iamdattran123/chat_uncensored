@@ -66,7 +66,7 @@ async function readWebpage(url: string): Promise<string> {
     });
     if (res.ok) {
       const text = await res.text();
-      return text.slice(0, 3500);
+      return text.slice(0, 2000);
     }
     const rawRes = await fetch(target, {
       headers: { "User-Agent": "Mozilla/5.0" },
@@ -79,7 +79,7 @@ async function readWebpage(url: string): Promise<string> {
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return stripped.slice(0, 3000);
+    return stripped.slice(0, 1800);
   } catch (err) {
     return `Lỗi khi đọc trang: ${String(err)}`;
   }
@@ -195,17 +195,32 @@ QUY TẮC BẮT BUỘC:
       let iterations = 0;
       const MAX_ITERATIONS = 4;
 
+      // Hàm cắt tỉa giữ prompt luôn nằm trong vùng an toàn (dưới 12000 ký tự ~ 3000 tokens)
+      const pruneMessages = (msgs: Array<{ role: string; content: string }>) => {
+        let totalChars = msgs.reduce((acc, m) => acc + m.content.length, 0);
+        if (totalChars <= 12000) return msgs;
+        return msgs.map((m, idx) => {
+          // Không đụng vào system prompt (0) và user prompt gần nhất
+          if (idx === 0 || idx >= msgs.length - 2) return m;
+          if (m.content.length > 800) {
+            return { ...m, content: m.content.slice(0, 800) + "\n... [đã thu gọn quan sát]" };
+          }
+          return m;
+        });
+      };
+
       while (iterations < MAX_ITERATIONS) {
         iterations++;
+        const safePrompt = pruneMessages(workingMessages);
         // Gọi model kiểm tra xem có cần dùng tool không
         const checkRes = await fetch(`${baseUrl}/v1/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${modalKey}` },
           body: JSON.stringify({
             model,
-            messages: workingMessages,
+            messages: safePrompt,
             temperature: 0.1,
-            max_tokens: 450,
+            max_tokens: 300,
           }),
         });
 
@@ -238,7 +253,7 @@ QUY TẮC BẮT BUỘC:
               if (!collectedSources.some(s => s.url === r.url)) collectedSources.push({ url: r.url });
             });
             const observation = searchResults.length > 0
-              ? `Kết quả tìm kiếm cho "${query}":\n` + searchResults.map((r, i) => `[${i + 1}] (${r.url})\n${r.snippet}`).join("\n\n")
+              ? `Kết quả tìm kiếm cho "${query}":\n` + searchResults.map((r, i) => `[${i + 1}] (${r.url})\n${r.snippet.slice(0, 200)}`).join("\n\n")
               : `Không tìm thấy kết quả phù hợp cho "${query}".`;
             await sendEvent({ type: "step", text: `✅ Đã thu thập ${searchResults.length} kết quả từ web` });
             workingMessages.push({ role: "assistant", content: rawContent });
@@ -259,7 +274,8 @@ QUY TẮC BẮT BUỘC:
             let observation = "";
             if (sandboxUrl) {
               const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "inspect", url: targetUrl });
-              observation = `[Kết quả phân tích Sandbox]:\n${sandboxRes}`;
+              const safeRes = sandboxRes.length > 2000 ? sandboxRes.slice(0, 2000) + "\n... [đã tóm lược]" : sandboxRes;
+              observation = `[Kết quả phân tích Sandbox]:\n${safeRes}`;
               await sendEvent({ type: "step", text: `⚙️ Cloud Sandbox: Hoàn tất trích xuất strings & cấu trúc tệp` });
             } else {
               observation = `[Cloud Sandbox]: Chưa cấu hình biến môi trường SANDBOX_BASE_URL trên Supabase. Hãy triển khai modal_agent.py và điền SANDBOX_BASE_URL.`;
@@ -275,7 +291,8 @@ QUY TẮC BẮT BUỘC:
             let observation = "";
             if (sandboxUrl) {
               const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "execute", language, code });
-              observation = `[Kết quả thực thi Sandbox]:\n${sandboxRes}`;
+              const safeRes = sandboxRes.length > 2000 ? sandboxRes.slice(0, 2000) + "\n... [đã tóm lược]" : sandboxRes;
+              observation = `[Kết quả thực thi Sandbox]:\n${safeRes}`;
               await sendEvent({ type: "step", text: `✅ Cloud Sandbox: Đã nhận stdout/stderr từ container` });
             } else {
               observation = `[Cloud Sandbox]: Chưa cấu hình SANDBOX_BASE_URL. Hãy deploy modal_agent.py để sử dụng tính năng chạy code cách ly.`;
@@ -294,14 +311,16 @@ QUY TẮC BẮT BUỘC:
       await sendEvent({ type: "step", text: "⚡ Đang phân tích logic và tổng hợp báo cáo chi tiết..." });
 
       // Gọi upstream stream câu trả lời hoàn chỉnh từ Coder 32B
+      const finalPrompt = pruneMessages(workingMessages);
       const finalRes = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${modalKey}` },
         body: JSON.stringify({
           model,
-          messages: workingMessages,
+          messages: finalPrompt,
           stream: true,
           temperature: 0.6,
+          max_tokens: 2048,
         }),
       });
 

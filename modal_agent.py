@@ -56,7 +56,7 @@ def serve():
         "--model", MODEL_ID,
         "--host", "0.0.0.0",
         "--port", "8000",
-        "--max-model-len", "4096",
+        "--max-model-len", "8192",
         "--gpu-memory-utilization", "0.95",
         "--kv-cache-dtype", "fp8",
         "--quantization", "awq_marlin",
@@ -106,14 +106,14 @@ def sandbox(payload: Dict[str, Any]):
             # 2. Quét chuỗi văn bản (Strings: tìm link ngầm, API key, endpoint, thư viện import)
             raw_strings = subprocess.getoutput(f"strings -n 8 '{target_file}'").splitlines()
             interesting_strings = [
-                s for s in raw_strings 
+                s.strip()[:120] for s in raw_strings 
                 if any(k in s.lower() for k in ["http://", "https://", "api", "token", "key", "secret", "password", "cmd", "exec", "eval", ".dll", ".so", ".py", ".lua", ".wasm"])
-            ][:40]
+            ][:20]
 
             # 3. Nếu là file nén (Zip / Game Package / Archive / APK), duyệt cấu trúc tệp
             archive_tree = []
             if any(ext in file_type.lower() for ext in ["zip", "archive", "package", "apk", "jar"]):
-                archive_tree = subprocess.getoutput(f"7z l '{target_file}' | head -n 35").splitlines()
+                archive_tree = [line[:100] for line in subprocess.getoutput(f"7z l '{target_file}' | head -n 25").splitlines()]
 
             # 4. Phân tích PE Header (nếu là file EXE / DLL Windows)
             pe_info = {}

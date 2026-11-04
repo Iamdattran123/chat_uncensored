@@ -587,6 +587,10 @@ async function send(text){
           try {
             const j = JSON.parse(data);
 
+            if (j.type === 'error') {
+              throw new Error(j.message || 'Lỗi xử lý Agent.');
+            }
+
             // 1. Phản hồi kiểu Agent: step, delta, sources
             if (j.type === 'step') {
               steps.push(j.text);
