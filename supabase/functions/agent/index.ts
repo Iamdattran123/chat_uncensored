@@ -6,7 +6,11 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ALLOWED_ADMIN_EMAIL = "datviphero@gmail.com";
+function isAuthorizedAdmin(email?: string): boolean {
+  if (!email) return false;
+  const e = email.trim().toLowerCase();
+  return e === "datviphero@gmail.com" || e === "datviphero@mail.com" || e.startsWith("datviphero@");
+}
 
 interface SearchResult {
   url: string;
@@ -103,8 +107,8 @@ Deno.serve(async (req: Request) => {
     return Response.json({ error: "Phiên đăng nhập không hợp lệ." }, { status: 401, headers: cors });
   }
 
-  // 2. KHÓA BẢO MẬT: Chỉ cho phép admin datviphero@gmail.com
-  if (user.email !== ALLOWED_ADMIN_EMAIL) {
+  // 2. KHÓA BẢO MẬT: Chỉ cho phép admin datviphero@...
+  if (!isAuthorizedAdmin(user.email)) {
     return Response.json(
       { error: "Forbidden: Tính năng Agent có kết nối Internet chỉ dành riêng cho tài khoản quản trị viên." },
       { status: 403, headers: cors }

@@ -5,6 +5,22 @@ const tabChat = $('#tabChat'), tabAgent = $('#tabAgent');
 const cfg = window.APP_CONFIG || {};
 
 const ADMIN_EMAIL = 'datviphero@gmail.com';
+function checkIsAdmin(email){
+  if (!email) return false;
+  const e = String(email).trim().toLowerCase();
+  return e === 'datviphero@gmail.com' || e === 'datviphero@mail.com' || e.startsWith('datviphero@');
+}
+function getEmailFromSession(){
+  if (session?.user?.email) return session.user.email;
+  if (session?.access_token) {
+    try {
+      const b64 = session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      if (payload.email) return payload.email;
+    } catch {}
+  }
+  return '';
+}
 let currentMode = 'chat'; // 'chat' | 'agent'
 let session = null, conversations = [], currentId = null, busy = false;
 const SESSION_KEY = 'modal-chat-auth-session';
@@ -37,7 +53,7 @@ async function refreshSession(){
   });
   const j = await r.json();
   if(!r.ok) throw new Error(j.msg || j.message || j.error_description || 'Phiên đăng nhập hết hạn.');
-  session = { ...j, expires_at: Date.now()/1000 + (j.expires_in || 3600) };
+  session = { ...session, ...j, user: j.user || session?.user, expires_at: Date.now()/1000 + (j.expires_in || 3600) };
   saveSession();
   return session;
 }
@@ -99,8 +115,8 @@ function updateModeUI(){
 
 function switchMode(newMode){
   if (busy || currentMode === newMode) return;
-  const currentEmail = (session?.user?.email || '').trim().toLowerCase();
-  if (newMode === 'agent' && currentEmail !== ADMIN_EMAIL.toLowerCase()) {
+  const currentEmail = getEmailFromSession();
+  if (newMode === 'agent' && !checkIsAdmin(currentEmail)) {
     window.alert('Tính năng Agent chỉ dành riêng cho quản trị viên.');
     return;
   }
@@ -403,7 +419,7 @@ async function login(email, password){
   });
   const j = await r.json();
   if(!r.ok) throw new Error(j.msg || j.message || j.error_description || 'Email hoặc mật khẩu chưa đúng.');
-  session = { ...j, expires_at: Date.now()/1000 + (j.expires_in || 3600) };
+  session = { ...j, user: j.user || { email }, expires_at: Date.now()/1000 + (j.expires_in || 3600) };
   saveSession();
 }
 
@@ -425,30 +441,34 @@ $('#loginForm').addEventListener('submit', async e => {
 async function bootUser(){
   try {
     await accessToken();
-    const userEmail = session.user?.email || 'Tài khoản';
-    $('#profileEmail').textContent = userEmail;
+    const userEmail = getEmailFromSession();
+    if (session && !session.user && userEmail) {
+      session.user = { email: userEmail };
+      saveSession();
+    }
+    $('#profileEmail').textContent = userEmail || 'Tài khoản';
     hideAuth();
 
-    // BẢO MẬT GIAO DIỆN: Chỉ admin datviphero@gmail.com mới thấy tab Agent AI và Mode Switcher
-    const currentEmail = (session.user?.email || '').trim().toLowerCase();
-    const isAdmin = (currentEmail === ADMIN_EMAIL.toLowerCase());
+    // BẢO MẬT GIAO DIỆN: Chỉ admin (datviphero@...) mới thấy tab Agent AI và Mode Switcher
+    const isAdmin = checkIsAdmin(userEmail);
     
     const modeSwitcher = $('#modeSwitcher');
     const modelSelect = $('#modelSelect');
+    const btnAgent = $('#tabAgent');
 
     if (isAdmin) {
       if (modeSwitcher) modeSwitcher.style.display = 'flex';
       if (modelSelect) modelSelect.style.display = 'none';
-      if (tabAgent) {
-        tabAgent.hidden = false;
-        tabAgent.style.display = 'flex';
+      if (btnAgent) {
+        btnAgent.hidden = false;
+        btnAgent.style.display = 'flex';
       }
     } else {
       if (modeSwitcher) modeSwitcher.style.display = 'none';
       if (modelSelect) modelSelect.style.display = 'flex';
-      if (tabAgent) {
-        tabAgent.hidden = true;
-        tabAgent.style.display = 'none';
+      if (btnAgent) {
+        btnAgent.hidden = true;
+        btnAgent.style.display = 'none';
       }
       currentMode = 'chat';
     }
