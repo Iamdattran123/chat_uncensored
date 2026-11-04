@@ -4,3 +4,25 @@
 .history-heading{display:flex;align-items:center;justify-content:space-between;padding-right:5px}.history-heading .side-label{margin:28px 8px 10px}.clear-history{border:0;background:transparent;color:#8d8d97;font-size:10px;padding:5px 6px;border-radius:6px;cursor:pointer}.clear-history:hover{background:#303034;color:#e6e6ec}.clear-history[hidden]{display:none}.history-row{display:flex;align-items:center;gap:2px;min-width:0;border-radius:8px}.history-item{flex:1;min-width:0;width:100%;border:0;background:transparent;text-align:left}.history-delete{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#9b9ba4;cursor:pointer;opacity:0;transition:opacity .12s ease,background .12s ease,color .12s ease}.history-row:hover .history-delete,.history-row:focus-within .history-delete{opacity:1}.history-delete:hover{background:#403235;color:#f09b98}.history-delete:disabled{cursor:default;opacity:0}.history-row:hover .history-item,.history-row:focus-within .history-item,.history-item.active{background:#29292d}.history-row .history-item:hover{background:#303034}@media(max-width:700px){.history-delete{opacity:.8}}
 /* Keep history deletion controls visible instead of hover-only. */
 .history-delete{opacity:.78}.history-delete:disabled{opacity:.28}.clear-history:disabled{opacity:.4;cursor:default}
+
+/* Mode Switcher & Admin Badge */
+.mode-switcher{display:flex;align-items:center;background:#18181b;padding:3px;border-radius:10px;border:1px solid #323238;gap:4px}
+.mode-tab{display:flex;align-items:center;gap:6px;border:0;background:transparent;color:#9b9ba4;padding:6px 12px;border-radius:7px;font-size:13px;font-weight:550;cursor:pointer;transition:all .15s ease}
+.mode-tab:hover{color:#fff;background:#27272b}
+.mode-tab.active{background:#2e2e33;color:#fff;box-shadow:0 1px 4px #00000030}
+.admin-badge{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;background:#f59e0b20;color:#fbbf24;border:1px solid #f59e0b40;padding:1px 5px;border-radius:4px}
+.agent-symbol{color:#eab308;text-shadow:0 0 12px #eab30840}
+.agent-skills-bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:14px auto 20px}
+.skill-tag{font-size:11px;background:#27272b;color:#d4d4d8;border:1px solid #3f3f46;border-radius:15px;padding:4px 11px}
+
+/* Agent Live Activity Panel */
+.agent-activity{background:#18181b;border:1px solid #303036;border-radius:11px;padding:10px 14px;margin-bottom:12px;font-size:12px}
+.activity-header{display:flex;align-items:center;gap:7px;color:#fbbf24;font-weight:600;margin-bottom:6px}
+.activity-list{display:flex;flex-direction:column;gap:5px;color:#a1a1aa}
+.activity-item{display:flex;align-items:center;gap:8px;font-size:12px;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:translateY(0)}}
+.sources-card{margin-top:14px;padding-top:10px;border-top:1px solid #303036}
+.sources-title{font-size:11px;font-weight:600;color:#a1a1aa;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.sources-list{display:flex;flex-wrap:wrap;gap:6px}
+.source-link{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#93c5fd;background:#1e293b;border:1px solid #3b82f640;padding:3px 9px;border-radius:6px;text-decoration:none;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-link:hover{background:#2563eb;color:#fff}

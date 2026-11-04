@@ -15,11 +15,56 @@
     <div class="profile"><div class="avatar">U</div><div class="profile-copy"><strong id="profileEmail">Tài khoản</strong><small>Lịch sử riêng tư</small></div><button class="icon-btn" id="logoutBtn" title="Đăng xuất">⇥</button></div>
   </aside>
   <main class="main">
-    <header class="topbar"><button class="icon-btn menu" id="openSide" aria-label="Mở menu">☰</button><div class="model-select"><span class="model-name" id="modelName">Model của bạn</span><span class="chevron">⌄</span><span class="model-pill">MODAL</span></div><div class="top-actions"><span class="status" id="status"><i></i><span>Đang kiểm tra</span></span><button class="icon-btn" id="settingsBtn" title="Cấu hình endpoint">⚙</button></div></header>
+    <header class="topbar">
+      <button class="icon-btn menu" id="openSide" aria-label="Mở menu">☰</button>
+      <div class="mode-switcher" id="modeSwitcher">
+        <button class="mode-tab active" id="tabChat" type="button" data-mode="chat">
+          <span class="tab-icon">💬</span>
+          <span>Trò chuyện</span>
+        </button>
+        <button class="mode-tab" id="tabAgent" type="button" data-mode="agent" hidden>
+          <span class="tab-icon">⚡</span>
+          <span>Agent AI</span>
+          <span class="admin-badge">Admin</span>
+        </button>
+      </div>
+      <div class="top-actions">
+        <span class="status" id="status"><i></i><span>Đang kiểm tra</span></span>
+        <button class="icon-btn" id="settingsBtn" title="Cấu hình endpoint">⚙</button>
+      </div>
+    </header>
     <section class="conversation" id="conversation">
-      <div class="welcome" id="welcome"><div class="welcome-symbol">✳</div><h1>Bắt đầu từ điều bạn đang nghĩ.</h1><p>Một không gian chat riêng cho model bạn tự chọn và triển khai trên GPU.</p>
-        <div class="suggestions"><button class="suggestion" data-prompt="Giải thích một ý tưởng phức tạp bằng ngôn ngữ thật dễ hiểu."><span class="suggestion-icon">◈</span><span><b>Giải thích rõ ràng</b><small>Biến chủ đề khó thành dễ hiểu</small></span><span class="arrow">↗</span></button><button class="suggestion" data-prompt="Giúp tôi lên kế hoạch cho một dự án mới, chia thành các bước cụ thể."><span class="suggestion-icon">⌁</span><span><b>Lên kế hoạch</b><small>Chia mục tiêu thành các bước nhỏ</small></span><span class="arrow">↗</span></button><button class="suggestion" data-prompt="Viết một đoạn code mẫu và giải thích cách hoạt động."><span class="suggestion-icon">⌘</span><span><b>Viết và sửa code</b><small>Cùng xây dựng ý tưởng</small></span><span class="arrow">↗</span></button><button class="suggestion" data-prompt="Đưa ra vài hướng tiếp cận sáng tạo cho vấn đề này: "><span class="suggestion-icon">✧</span><span><b>Khám phá ý tưởng</b><small>Mở rộng góc nhìn của bạn</small></span><span class="arrow">↗</span></button></div>
-      </div><div class="messages" id="messages"></div>
+      <div class="welcome" id="welcome">
+        <div class="welcome-chat-content" id="welcomeChat">
+          <div class="welcome-symbol">✳</div>
+          <h1>Bắt đầu từ điều bạn đang nghĩ.</h1>
+          <p>Một không gian chat riêng cho model bạn tự chọn và triển khai trên GPU.</p>
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="Giải thích một ý tưởng phức tạp bằng ngôn ngữ thật dễ hiểu."><span class="suggestion-icon">◈</span><span><b>Giải thích rõ ràng</b><small>Biến chủ đề khó thành dễ hiểu</small></span><span class="arrow">↗</span></button>
+            <button class="suggestion" data-prompt="Giúp tôi lên kế hoạch cho một dự án mới, chia thành các bước cụ thể."><span class="suggestion-icon">⌁</span><span><b>Lên kế hoạch</b><small>Chia mục tiêu thành các bước nhỏ</small></span><span class="arrow">↗</span></button>
+            <button class="suggestion" data-prompt="Viết một đoạn code mẫu và giải thích cách hoạt động."><span class="suggestion-icon">⌘</span><span><b>Viết và sửa code</b><small>Cùng xây dựng ý tưởng</small></span><span class="arrow">↗</span></button>
+            <button class="suggestion" data-prompt="Đưa ra vài hướng tiếp cận sáng tạo cho vấn đề này: "><span class="suggestion-icon">✧</span><span><b>Khám phá ý tưởng</b><small>Mở rộng góc nhìn của bạn</small></span><span class="arrow">↗</span></button>
+          </div>
+        </div>
+        <div class="welcome-agent-content" id="welcomeAgent" style="display:none;">
+          <div class="welcome-symbol agent-symbol">⚡</div>
+          <h1>Tác tử AI Tự hành (Agent Online)</h1>
+          <p>Trang bị kỹ năng kết nối Internet theo thời gian thực · Tự động tìm kiếm web, duyệt tài liệu và phân tích chuyên sâu.</p>
+          <div class="agent-skills-bar">
+            <span class="skill-tag">🌐 Tìm kiếm Internet</span>
+            <span class="skill-tag">📄 Đọc trang web</span>
+            <span class="skill-tag">🧠 Tự hành ReAct</span>
+            <span class="skill-tag">🔗 Trích dẫn nguồn</span>
+          </div>
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="Tìm kiếm và tóm tắt những tin tức công nghệ AI nóng hổi nhất tuần này kèm nguồn tin."><span class="suggestion-icon">🔍</span><span><b>Tin tức AI hôm nay</b><small>Tìm kiếm realtime trên internet</small></span><span class="arrow">↗</span></button>
+            <button class="suggestion" data-prompt="Tra cứu thông số kỹ thuật, giá bán và đánh giá hiệu năng card đồ họa RTX 5090 mới nhất."><span class="suggestion-icon">📊</span><span><b>Tra cứu thị trường & phần cứng</b><small>Cập nhật dữ liệu mới nhất</small></span><span class="arrow">↗</span></button>
+            <button class="suggestion" data-prompt="Nghiên cứu kiến trúc vLLM và PagedAttention, so sánh ưu nhược điểm với TensorRT-LLM."><span class="suggestion-icon">⚡</span><span><b>Nghiên cứu công nghệ chuyên sâu</b><small>Tổng hợp kiến thức kỹ thuật</small></span><span class="arrow">↗</span></button>
+            <button class="suggestion" data-prompt="Đọc và phân tích xu hướng công nghệ mới từ các diễn đàn quốc tế."><span class="suggestion-icon">🌐</span><span><b>Phân tích toàn cầu</b><small>Duyệt web và trích dẫn link</small></span><span class="arrow">↗</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="messages" id="messages"></div>
     </section>
     <div class="composer-wrap"><form class="composer" id="chatForm"><textarea id="prompt" rows="1" placeholder="Nhắn tin với model của bạn..." aria-label="Tin nhắn"></textarea><div class="composer-tools"><div class="composer-hint"><span class="tiny-dot"></span><span>Model chạy qua endpoint riêng</span></div><button class="send-btn" id="sendBtn" aria-label="Gửi tin nhắn"><svg viewBox="0 0 24 24" width="17" height="17" fill="none"><path d="M12 19V5m0 0L6.5 10.5M12 5l5.5 5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></form><div class="disclaimer">Model có thể mắc lỗi. Hãy kiểm tra lại thông tin quan trọng.</div></div>
   </main>

@@ -4,9 +4,13 @@ create table if not exists public.conversations (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   title text not null default 'Cuộc trò chuyện mới',
   messages jsonb not null default '[]'::jsonb,
+  mode text not null default 'chat',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Bổ sung cột mode nếu bảng đã tạo trước đó
+alter table public.conversations add column if not exists mode text not null default 'chat';
 
 alter table public.conversations enable row level security;
 

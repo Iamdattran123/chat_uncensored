@@ -36,9 +36,12 @@ supabase link --project-ref YOUR_PROJECT_REF
 ```bash
 supabase secrets set MODAL_BASE_URL="https://YOUR-ENDPOINT.modal.run" MODAL_API_KEY="YOUR_LONG_RANDOM_TOKEN" MODEL_ID="Qwen/Qwen2.5-7B-Instruct"
 supabase functions deploy chat
+supabase functions deploy agent
 ```
 
 `MODAL_API_KEY` phải khớp với token của Modal. Không đưa token đó vào `config.js`, GitHub, hay trình duyệt. Function xác thực access token Supabase trước khi chuyển request tới endpoint model.
+- **Function `chat`**: Phục vụ chat thông thường (bạn bè và bạn đều dùng được).
+- **Function `agent`**: Phục vụ tác tử tự hành có kết nối Internet (chỉ tài khoản `datviphero@gmail.com` mới có quyền truy cập, các tài khoản khác bị chặn HTTP 403).
 
 Nếu chưa deploy model, xem phần **Triển khai model lên Modal** bên dưới.
 
