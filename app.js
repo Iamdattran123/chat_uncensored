@@ -280,10 +280,17 @@ function newChat(){
 }
 
 async function loadConversations(){
-  const rows = await api('/rest/v1/conversations?select=id,title,messages,mode,updated_at&order=updated_at.desc');
+  let rows = [];
+  try {
+    // Tránh aggregate keyword 'mode' của PostgreSQL bằng cách dùng 'chat_mode'
+    rows = await api('/rest/v1/conversations?select=id,title,messages,chat_mode,updated_at&order=updated_at.desc');
+  } catch (err) {
+    // Fallback nếu database chưa chạy script migration chat_mode
+    rows = await api('/rest/v1/conversations?select=id,title,messages,updated_at&order=updated_at.desc');
+  }
   conversations = (rows || []).map(r => ({
     ...r,
-    mode: r.mode || 'chat',
+    mode: r.chat_mode || r.mode || 'chat',
     messages: Array.isArray(r.messages) ? r.messages.map(m => {
       if(m.role === 'assistant'){
         const legacy = splitLegacyThink(m.content);
@@ -306,16 +313,27 @@ async function loadConversations(){
 }
 
 async function persistConversation(c){
-  await api('/rest/v1/conversations?on_conflict=id', {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify({
-      id: c.id,
-      title: c.title,
-      messages: c.messages,
-      mode: c.mode || 'chat'
-    })
-  });
+  const payload = {
+    id: c.id,
+    title: c.title,
+    messages: c.messages,
+    chat_mode: c.mode || 'chat'
+  };
+  try {
+    await api('/rest/v1/conversations?on_conflict=id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    // Fallback nếu database chưa có cột chat_mode
+    delete payload.chat_mode;
+    await api('/rest/v1/conversations?on_conflict=id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(payload)
+    });
+  }
 }
 
 async function deleteConversation(id){
@@ -346,10 +364,17 @@ async function clearAllHistory(){
   try {
     const userId = session?.user?.id;
     if(!userId) throw new Error('Không xác định được tài khoản hiện tại.');
-    await api(`/rest/v1/conversations?user_id=eq.${encodeURIComponent(userId)}&mode=eq.${encodeURIComponent(currentMode)}`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' }
-    });
+    try {
+      await api(`/rest/v1/conversations?user_id=eq.${encodeURIComponent(userId)}&chat_mode=eq.${encodeURIComponent(currentMode)}`, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=minimal' }
+      });
+    } catch {
+      await api(`/rest/v1/conversations?user_id=eq.${encodeURIComponent(userId)}`, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=minimal' }
+      });
+    }
     conversations = conversations.filter(c => (c.mode || 'chat') !== currentMode);
     currentId = null;
     renderHistory();
