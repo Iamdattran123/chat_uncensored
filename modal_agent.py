@@ -16,22 +16,21 @@ MODEL_ID = os.environ.get(
 # Volume lưu trữ cache weights của HuggingFace - Tải 1 lần, khởi động tức thì
 model_volume = modal.Volume.from_name("coder-32b-weights-cache", create_if_missing=True)
 
-# Image cho vLLM chạy GPU A10G
+# Image cho vLLM chạy GPU A10G (vLLM v0.9.2 đã có sẵn CUDA/AWQ kernel tối ưu, không cần autoawq)
 vllm_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.11")
-    .pip_install("vllm==0.9.2", "transformers==4.53.3", "autoawq==0.2.8")
+    .pip_install("vllm==0.9.2", "transformers==4.53.3")
 )
 
-# Image cho Cloud Sandbox (CPU, cô lập 100%, cài sẵn bộ đồ nghề dịch ngược & điều tra)
+# Image cho Cloud Sandbox (CPU, cô lập 100%, cài sẵn bộ đồ nghề dịch ngược & điều tra nhẹ nhàng, build siêu nhanh)
 sandbox_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(
-        "git", "curl", "wget", "p7zip-full", "unzip", "binwalk",
-        "file", "binutils", "default-jre-headless"
+        "git", "curl", "wget", "p7zip-full", "unzip",
+        "file", "binutils"
     )
     .pip_install(
-        "pefile", "capstone", "uncompyle6", "decompyle++",
-        "requests", "pyelftools"
+        "pefile", "capstone", "pyelftools", "requests"
     )
 )
 
