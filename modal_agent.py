@@ -39,7 +39,7 @@ sandbox_image = (
 # =========================================================================
 @app.function(
     image=vllm_image,
-    gpu="A10G",  # 24GB VRAM
+    gpu="A10G",  # 24GB VRAM (Hoặc đổi thành "L40S" nếu muốn bung 16K context)
     volumes={"/root/.cache/huggingface": model_volume},
     secrets=[modal.Secret.from_name("model-auth")],
     timeout=3600,
@@ -56,9 +56,10 @@ def serve():
         "--model", MODEL_ID,
         "--host", "0.0.0.0",
         "--port", "8000",
-        "--max-model-len", "8192",
-        "--gpu-memory-utilization", "0.92",
-        "--quantization", "awq",
+        "--max-model-len", "4096",
+        "--gpu-memory-utilization", "0.95",
+        "--kv-cache-dtype", "fp8",
+        "--quantization", "awq_marlin",
         "--enforce-eager",
         "--trust-remote-code",
     ], env=server_env)
