@@ -66,10 +66,8 @@ async function readWebpage(url: string): Promise<string> {
     });
     if (res.ok) {
       const text = await res.text();
-      // Giới hạn độ dài để không làm tràn context model
       return text.slice(0, 3500);
     }
-    // Fallback nếu Jina lỗi
     const rawRes = await fetch(target, {
       headers: { "User-Agent": "Mozilla/5.0" },
       signal: AbortSignal.timeout(5000),
@@ -84,6 +82,29 @@ async function readWebpage(url: string): Promise<string> {
     return stripped.slice(0, 3000);
   } catch (err) {
     return `Lỗi khi đọc trang: ${String(err)}`;
+  }
+}
+
+// 3. Tool tương tác Cloud Sandbox Cô Lập (Modal Sandbox Endpoint)
+async function callCloudSandbox(sandboxUrl: string, modalKey: string, payload: Record<string, unknown>): Promise<string> {
+  try {
+    const res = await fetch(sandboxUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${modalKey}`,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000), // Timeout 60s cho các lệnh sandbox
+    });
+
+    if (!res.ok) {
+      return `Lỗi Cloud Sandbox: HTTP ${res.status} - ${await res.text()}`;
+    }
+    const data = await res.json();
+    return JSON.stringify(data, null, 2);
+  } catch (err) {
+    return `Lỗi kết nối Cloud Sandbox: ${String(err)}`;
   }
 }
 
@@ -110,7 +131,7 @@ Deno.serve(async (req: Request) => {
   // 2. KHÓA BẢO MẬT: Chỉ cho phép admin datviphero@...
   if (!isAuthorizedAdmin(user.email)) {
     return Response.json(
-      { error: "Forbidden: Tính năng Agent có kết nối Internet chỉ dành riêng cho tài khoản quản trị viên." },
+      { error: "Forbidden: Tính năng Agent có kết nối Internet & Sandbox chỉ dành riêng cho tài khoản quản trị viên." },
       { status: 403, headers: cors }
     );
   }
@@ -122,11 +143,14 @@ Deno.serve(async (req: Request) => {
     return Response.json({ error: "Danh sách tin nhắn không hợp lệ." }, { status: 400, headers: cors });
   }
 
-  const baseUrl = Deno.env.get("MODAL_BASE_URL")?.replace(/\/$/, "");
-  const modalKey = Deno.env.get("MODAL_API_KEY");
-  const model = Deno.env.get("MODEL_ID") || "Qwen/Qwen2.5-7B-Instruct";
+  // Ưu tiên AGENT_MODAL_BASE_URL (Não 32B), fallback sang MODAL_BASE_URL (Không làm ảnh hưởng Chat thường)
+  const baseUrl = (Deno.env.get("AGENT_MODAL_BASE_URL") || Deno.env.get("MODAL_BASE_URL"))?.replace(/\/$/, "");
+  const modalKey = Deno.env.get("AGENT_MODAL_API_KEY") || Deno.env.get("MODAL_API_KEY");
+  const model = Deno.env.get("AGENT_MODEL_ID") || "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ";
+  const sandboxUrl = Deno.env.get("SANDBOX_BASE_URL")?.replace(/\/$/, "");
+
   if (!baseUrl || !modalKey) {
-    return Response.json({ error: "Chưa cấu hình endpoint Modal." }, { status: 503, headers: cors });
+    return Response.json({ error: "Chưa cấu hình endpoint Modal cho Agent." }, { status: 503, headers: cors });
   }
 
   // Thiết lập SSE Stream trả về cho client
@@ -139,22 +163,28 @@ Deno.serve(async (req: Request) => {
     await writer.write(encoder.encode(`data: ${payload}\n\n`));
   };
 
-  // Chạy background Agent Loop
+  // Chạy background Agent Loop với Coder 32B & Cloud Sandbox
   (async () => {
     try {
-      const agentSystemPrompt = `Bạn là Tác tử AI Độc Quyền (Agent AI) có khả năng kết nối Internet theo thời gian thực và phân tích thông tin sâu sắc.
-Bạn có quyền tự hành sử dụng 2 công cụ (tools) khi cần tìm kiếm thông tin mới hoặc tra cứu tài liệu:
+      const agentSystemPrompt = `Bạn là Tác tử AI Cấp cao (Autonomous Coder & Security Investigation Agent) sở hữu não bộ Qwen 32B Coder siêu việt và hệ thống Cloud Sandbox cô lập an toàn 100%.
+Bạn có quyền tự hành sử dụng các công cụ (tools) khi cần tìm kiếm, kiểm tra, dịch ngược hoặc chạy thử code:
 
-1. search: Tìm kiếm dữ liệu internet khi câu hỏi liên quan đến tin tức, thời sự, công nghệ mới, thông số, sự kiện gần đây hoặc bạn chưa chắc chắn.
-   Cú pháp trả về: {"tool": "search", "query": "từ khóa ngắn gọn"}
+1. search: Tìm kiếm thông tin trên internet khi cần tra cứu tài liệu mới, thông số, thư viện.
+   Cú pháp: {"tool": "search", "query": "từ khóa ngắn gọn"}
 
-2. read: Đọc nội dung chi tiết của một đường link / trang web.
-   Cú pháp trả về: {"tool": "read", "url": "https://..."}
+2. read: Đọc tài liệu chi tiết từ một URL / trang web.
+   Cú pháp: {"tool": "read", "url": "https://..."}
 
-Quy tắc bắt buộc:
-- Nếu bạn cần dùng công cụ, CHỈ trả về đúng chuỗi JSON chứa tool (không viết thêm bất kỳ lời dẫn nào).
-- Nếu không cần dùng công cụ hoặc đã có đủ thông tin, hãy trả lời trực tiếp, rõ ràng, sâu sắc bằng tiếng Việt.
-- Khi sử dụng thông tin từ internet, hãy dẫn nguồn hoặc trích link ở cuối bài viết.`;
+3. sandbox_inspect: Tải tệp/binary/game/kho lưu trữ từ đường link vào Cloud Sandbox cô lập để kiểm tra định dạng (file), trích xuất chuỗi nhạy cảm (strings), duyệt tệp bên trong zip/apk/archive, kiểm tra PE headers.
+   Cú pháp: {"tool": "sandbox_inspect", "url": "https://..."}
+
+4. sandbox_execute: Thực thi an toàn một script Python hoặc Bash trong Cloud Sandbox cô lập để giải mã, thử nghiệm giải thuật hoặc bóc tách dữ liệu.
+   Cú pháp: {"tool": "sandbox_execute", "language": "python", "code": "mã code python cần chạy"}
+
+QUY TẮC BẮT BUỘC:
+- Mọi hoạt động dịch ngược, tải tệp lạ hoặc thực thi code BẮT BUỘC phải dùng sandbox_inspect / sandbox_execute để đảm bảo an toàn tuyệt đối, không chạm vào máy local.
+- Khi cần dùng công cụ, CHỈ trả về đúng chuỗi JSON chứa tool (không viết thêm bất kỳ lời dẫn nào).
+- Khi đã có dữ liệu hoặc không cần tool, hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Engineer bằng tiếng Việt, trình bày rõ logic, mã nguồn phục hồi và các phát hiện điều tra.`;
 
       const workingMessages = [
         { role: "system", content: agentSystemPrompt },
@@ -163,7 +193,7 @@ Quy tắc bắt buộc:
 
       const collectedSources: Array<{ title?: string; url: string }> = [];
       let iterations = 0;
-      const MAX_ITERATIONS = 3;
+      const MAX_ITERATIONS = 4;
 
       while (iterations < MAX_ITERATIONS) {
         iterations++;
@@ -174,8 +204,8 @@ Quy tắc bắt buộc:
           body: JSON.stringify({
             model,
             messages: workingMessages,
-            temperature: 0.2,
-            max_tokens: 300,
+            temperature: 0.1,
+            max_tokens: 450,
           }),
         });
 
@@ -187,50 +217,83 @@ Quy tắc bắt buộc:
         const rawContent = checkJson.choices?.[0]?.message?.content || "";
 
         // Kiểm tra xem model có gọi tool JSON không
-        const toolMatch = rawContent.match(/\{\s*"tool"\s*:\s*"(search|read)"\s*,\s*"(query|url)"\s*:\s*"([^"]+)"\s*\}/i);
+        let toolCall: { tool: string; [key: string]: unknown } | null = null;
+        try {
+          const jsonMatch = rawContent.match(/\{[\s\S]*?"tool"[\s\S]*?\}/);
+          if (jsonMatch) {
+            toolCall = JSON.parse(jsonMatch[0]);
+          }
+        } catch {
+          toolCall = null;
+        }
 
-        if (toolMatch) {
-          const toolType = toolMatch[1].toLowerCase();
-          const toolArg = toolMatch[3];
+        if (toolCall && toolCall.tool) {
+          const toolType = String(toolCall.tool).toLowerCase();
 
           if (toolType === "search") {
-            await sendEvent({ type: "step", text: `🔍 Đang tìm kiếm internet: "${toolArg}"` });
-            const searchResults = await searchWeb(toolArg);
-            
+            const query = String(toolCall.query || "");
+            await sendEvent({ type: "step", text: `🔍 Đang tìm kiếm internet: "${query}"` });
+            const searchResults = await searchWeb(query);
             searchResults.forEach(r => {
-              if (!collectedSources.some(s => s.url === r.url)) {
-                collectedSources.push({ url: r.url });
-              }
+              if (!collectedSources.some(s => s.url === r.url)) collectedSources.push({ url: r.url });
             });
-
             const observation = searchResults.length > 0
-              ? `Kết quả tìm kiếm cho "${toolArg}":\n` + searchResults.map((r, i) => `[${i + 1}] (${r.url})\n${r.snippet}`).join("\n\n")
-              : `Không tìm thấy kết quả phù hợp cho "${toolArg}".`;
-
+              ? `Kết quả tìm kiếm cho "${query}":\n` + searchResults.map((r, i) => `[${i + 1}] (${r.url})\n${r.snippet}`).join("\n\n")
+              : `Không tìm thấy kết quả phù hợp cho "${query}".`;
             await sendEvent({ type: "step", text: `✅ Đã thu thập ${searchResults.length} kết quả từ web` });
             workingMessages.push({ role: "assistant", content: rawContent });
             workingMessages.push({ role: "user", content: `[Hệ thống Observation]:\n${observation}` });
             continue;
           } else if (toolType === "read") {
-            await sendEvent({ type: "step", text: `🌐 Đang đọc tài liệu: ${toolArg}` });
-            const pageContent = await readWebpage(toolArg);
-            if (!collectedSources.some(s => s.url === toolArg)) {
-              collectedSources.push({ url: toolArg });
-            }
-            await sendEvent({ type: "step", text: `📄 Đã đọc nội dung từ trang web` });
+            const url = String(toolCall.url || "");
+            await sendEvent({ type: "step", text: `🌐 Đang đọc tài liệu: ${url}` });
+            const pageContent = await readWebpage(url);
+            if (!collectedSources.some(s => s.url === url)) collectedSources.push({ url });
+            await sendEvent({ type: "step", text: `📄 Đã đọc xong nội dung trang web` });
             workingMessages.push({ role: "assistant", content: rawContent });
-            workingMessages.push({ role: "user", content: `[Hệ thống Observation - Nội dung trang ${toolArg}]:\n${pageContent}` });
+            workingMessages.push({ role: "user", content: `[Hệ thống Observation - Nội dung ${url}]:\n${pageContent}` });
+            continue;
+          } else if (toolType === "sandbox_inspect") {
+            const targetUrl = String(toolCall.url || "");
+            await sendEvent({ type: "step", text: `🛡️ Cloud Sandbox: Đang tải tệp vào môi trường cách ly...` });
+            let observation = "";
+            if (sandboxUrl) {
+              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "inspect", url: targetUrl });
+              observation = `[Kết quả phân tích Sandbox]:\n${sandboxRes}`;
+              await sendEvent({ type: "step", text: `⚙️ Cloud Sandbox: Hoàn tất trích xuất strings & cấu trúc tệp` });
+            } else {
+              observation = `[Cloud Sandbox]: Chưa cấu hình biến môi trường SANDBOX_BASE_URL trên Supabase. Hãy triển khai modal_agent.py và điền SANDBOX_BASE_URL.`;
+              await sendEvent({ type: "step", text: `⚠️ Cloud Sandbox: Chưa cấu hình endpoint SANDBOX_BASE_URL` });
+            }
+            workingMessages.push({ role: "assistant", content: rawContent });
+            workingMessages.push({ role: "user", content: `[Hệ thống Observation]:\n${observation}` });
+            continue;
+          } else if (toolType === "sandbox_execute") {
+            const code = String(toolCall.code || "");
+            const language = String(toolCall.language || "python");
+            await sendEvent({ type: "step", text: `💻 Cloud Sandbox: Đang thực thi mã ${language} trong môi trường cách ly...` });
+            let observation = "";
+            if (sandboxUrl) {
+              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "execute", language, code });
+              observation = `[Kết quả thực thi Sandbox]:\n${sandboxRes}`;
+              await sendEvent({ type: "step", text: `✅ Cloud Sandbox: Đã nhận stdout/stderr từ container` });
+            } else {
+              observation = `[Cloud Sandbox]: Chưa cấu hình SANDBOX_BASE_URL. Hãy deploy modal_agent.py để sử dụng tính năng chạy code cách ly.`;
+              await sendEvent({ type: "step", text: `⚠️ Cloud Sandbox: Chưa cấu hình SANDBOX_BASE_URL` });
+            }
+            workingMessages.push({ role: "assistant", content: rawContent });
+            workingMessages.push({ role: "user", content: `[Hệ thống Observation]:\n${observation}` });
             continue;
           }
         }
 
-        // Không cần tool nữa -> Stream câu trả lời cuối cùng
+        // Không cần tool nữa -> Thoát vòng lặp để stream câu trả lời
         break;
       }
 
-      await sendEvent({ type: "step", text: "⚡ Đang tổng hợp câu trả lời chi tiết..." });
+      await sendEvent({ type: "step", text: "⚡ Đang phân tích logic và tổng hợp báo cáo chi tiết..." });
 
-      // Gọi upstream stream câu trả lời hoàn chỉnh
+      // Gọi upstream stream câu trả lời hoàn chỉnh từ Coder 32B
       const finalRes = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${modalKey}` },
@@ -238,7 +301,7 @@ Quy tắc bắt buộc:
           model,
           messages: workingMessages,
           stream: true,
-          temperature: 0.7,
+          temperature: 0.6,
         }),
       });
 
@@ -269,9 +332,7 @@ Quy tắc bắt buộc:
             if (content || reasoning) {
               await sendEvent({ type: "delta", content, reasoning });
             }
-          } catch {
-            // bỏ qua parse error của partial chunk
-          }
+          } catch {}
         }
       }
 

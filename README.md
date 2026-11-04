@@ -34,14 +34,19 @@ supabase link --project-ref YOUR_PROJECT_REF
 Đặt secrets cho Edge Function rồi deploy:
 
 ```bash
-supabase secrets set MODAL_BASE_URL="https://YOUR-ENDPOINT.modal.run" MODAL_API_KEY="YOUR_LONG_RANDOM_TOKEN" MODEL_ID="Qwen/Qwen2.5-7B-Instruct"
+# Cấu hình Chat thường (dùng model 7B/8B hiện tại cho bạn của bạn)
+supabase secrets set MODAL_BASE_URL="https://YOUR-CHAT-ENDPOINT.modal.run" MODAL_API_KEY="YOUR_LONG_RANDOM_TOKEN" MODEL_ID="Qwen/Qwen2.5-7B-Instruct"
+
+# Cấu hình Agent Coder 32B & Cloud Sandbox (độc quyền cho bạn datviphero@...)
+supabase secrets set AGENT_MODAL_BASE_URL="https://YOUR-AGENT-SERVE-ENDPOINT.modal.run" AGENT_MODEL_ID="Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" SANDBOX_BASE_URL="https://YOUR-SANDBOX-ENDPOINT.modal.run"
+
 supabase functions deploy chat
 supabase functions deploy agent
 ```
 
-`MODAL_API_KEY` phải khớp với token của Modal. Không đưa token đó vào `config.js`, GitHub, hay trình duyệt. Function xác thực access token Supabase trước khi chuyển request tới endpoint model.
-- **Function `chat`**: Phục vụ chat thông thường (bạn bè và bạn đều dùng được).
-- **Function `agent`**: Phục vụ tác tử tự hành có kết nối Internet (chỉ tài khoản `datviphero@gmail.com` mới có quyền truy cập, các tài khoản khác bị chặn HTTP 403).
+`MODAL_API_KEY` phải khớp với token của Modal. Không đưa token đó vào `config.js`, GitHub, hay trình duyệt.
+- **Function `chat`**: Phục vụ chat thông thường (bạn bè và bạn đều dùng được, chạy `modal_app.py`).
+- **Function `agent`**: Phục vụ tác tử Coder 32B + Cloud Sandbox gVisor cách ly (chỉ tài khoản `datviphero@...` mới truy cập được, chạy `modal_agent.py`).
 
 Nếu chưa deploy model, xem phần **Triển khai model lên Modal** bên dưới.
 
@@ -51,20 +56,30 @@ Nếu chưa deploy model, xem phần **Triển khai model lên Modal** bên dư�
 
 Mở URL đó, đăng nhập bằng tài khoản Supabase. Bạn của bạn đăng nhập bằng tài khoản riêng; danh sách lịch sử hai người được cô lập ở database bằng RLS.
 
-## 4) Model Modal theo nhu cầu
+## 4) Triển khai Model lên Modal
 
-Cần tài khoản Modal và Modal CLI đã được `modal setup`. `modal_app.py` là mẫu vLLM, mặc định GPU L40S, `min_containers=0`, `max_containers=1` và idle timeout 60 giây. Deploy:
+Cần tài khoản Modal và Modal CLI đã được `modal setup`. Tạo secret token xác thực một lần:
 
 ```bash
 python -m pip install modal
 modal setup
 export MODEL_API_KEY="YOUR_LONG_RANDOM_TOKEN"
 modal secret create model-auth MODEL_API_KEY="$MODEL_API_KEY"
-export MODEL_ID="Qwen/Qwen2.5-7B-Instruct"
-modal deploy modal_app.py
 ```
 
-Sau khi deploy, copy URL endpoint Modal vào `MODAL_BASE_URL` của bước 2. `MODEL_ID` phải giống nhau ở Modal và Edge Function. Chỉ dùng model có giấy phép phù hợp. GPU/model cần chọn theo bộ nhớ và nhu cầu; chi phí tính theo tài nguyên Modal dùng khi model hoạt động.
+### A. Deploy Chat thường (`modal_app.py`):
+```bash
+modal deploy modal_app.py
+```
+Copy URL cấp cho `serve` điền vào biến `MODAL_BASE_URL` ở Bước 2.
+
+### B. Deploy Agent Coder 32B & Cloud Sandbox (`modal_agent.py`):
+```bash
+modal deploy modal_agent.py
+```
+Sau khi deploy `modal_agent.py`, Modal sẽ cấp 2 URL:
+1. Endpoint vLLM Coder 32B $\rightarrow$ Điền vào `AGENT_MODAL_BASE_URL`.
+2. Endpoint Cloud Sandbox $\rightarrow$ Điền vào `SANDBOX_BASE_URL`.
 
 ## Dùng thử giao diện cục bộ
 
