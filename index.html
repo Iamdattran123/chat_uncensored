@@ -17,12 +17,17 @@
   <main class="main">
     <header class="topbar">
       <button class="icon-btn menu" id="openSide" aria-label="Mở menu">☰</button>
-      <div class="mode-switcher" id="modeSwitcher">
+      <div class="model-select" id="modelSelect">
+        <span class="model-name" id="modelName">Model của bạn</span>
+        <span class="chevron">⌄</span>
+        <span class="model-pill">MODAL</span>
+      </div>
+      <div class="mode-switcher" id="modeSwitcher" style="display: none;">
         <button class="mode-tab active" id="tabChat" type="button" data-mode="chat">
           <span class="tab-icon">💬</span>
           <span>Trò chuyện</span>
         </button>
-        <button class="mode-tab" id="tabAgent" type="button" data-mode="agent" hidden>
+        <button class="mode-tab" id="tabAgent" type="button" data-mode="agent">
           <span class="tab-icon">⚡</span>
           <span>Agent AI</span>
           <span class="admin-badge">Admin</span>

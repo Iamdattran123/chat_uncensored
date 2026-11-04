@@ -99,7 +99,8 @@ function updateModeUI(){
 
 function switchMode(newMode){
   if (busy || currentMode === newMode) return;
-  if (newMode === 'agent' && session?.user?.email !== ADMIN_EMAIL) {
+  const currentEmail = (session?.user?.email || '').trim().toLowerCase();
+  if (newMode === 'agent' && currentEmail !== ADMIN_EMAIL.toLowerCase()) {
     window.alert('Tính năng Agent chỉ dành riêng cho quản trị viên.');
     return;
   }
@@ -107,7 +108,7 @@ function switchMode(newMode){
   updateModeUI();
 
   // Tìm cuộc hội thoại đầu tiên của mode này
-  const modeConv = conversations.find(c => (c.mode || 'chat') === currentMode);
+  const modeConv = conversations.find(c => (c.chat_mode || c.mode || 'chat') === currentMode);
   currentId = modeConv ? modeConv.id : null;
   renderHistory();
   renderMessages();
@@ -428,13 +429,28 @@ async function bootUser(){
     $('#profileEmail').textContent = userEmail;
     hideAuth();
 
-    // BẢO MẬT GIAO DIỆN: Chỉ admin datviphero@gmail.com mới thấy tab Agent AI
-    const isAdmin = (session.user?.email === ADMIN_EMAIL);
-    if (tabAgent) {
-      tabAgent.hidden = !isAdmin;
-      if (!isAdmin && currentMode === 'agent') {
-        currentMode = 'chat';
+    // BẢO MẬT GIAO DIỆN: Chỉ admin datviphero@gmail.com mới thấy tab Agent AI và Mode Switcher
+    const currentEmail = (session.user?.email || '').trim().toLowerCase();
+    const isAdmin = (currentEmail === ADMIN_EMAIL.toLowerCase());
+    
+    const modeSwitcher = $('#modeSwitcher');
+    const modelSelect = $('#modelSelect');
+
+    if (isAdmin) {
+      if (modeSwitcher) modeSwitcher.style.display = 'flex';
+      if (modelSelect) modelSelect.style.display = 'none';
+      if (tabAgent) {
+        tabAgent.hidden = false;
+        tabAgent.style.display = 'flex';
       }
+    } else {
+      if (modeSwitcher) modeSwitcher.style.display = 'none';
+      if (modelSelect) modelSelect.style.display = 'flex';
+      if (tabAgent) {
+        tabAgent.hidden = true;
+        tabAgent.style.display = 'none';
+      }
+      currentMode = 'chat';
     }
     updateModeUI();
 
@@ -453,7 +469,14 @@ $('#logoutBtn').onclick = () => {
   saveSession();
   conversations = [];
   currentId = null;
-  if (tabAgent) tabAgent.hidden = true;
+  const modeSwitcher = $('#modeSwitcher');
+  const modelSelect = $('#modelSelect');
+  if (modeSwitcher) modeSwitcher.style.display = 'none';
+  if (modelSelect) modelSelect.style.display = 'flex';
+  if (tabAgent) {
+    tabAgent.hidden = true;
+    tabAgent.style.display = 'none';
+  }
   currentMode = 'chat';
   updateModeUI();
   renderHistory();
