@@ -30,7 +30,7 @@ sandbox_image = (
         "file", "binutils"
     )
     .pip_install(
-        "pefile", "capstone", "pyelftools", "requests"
+        "pefile", "capstone", "pyelftools", "requests", "fastapi"
     )
 )
 
