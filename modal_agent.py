@@ -22,15 +22,28 @@ vllm_image = (
     .pip_install("vllm==0.9.2", "transformers==4.53.3")
 )
 
-# Image cho Cloud Sandbox (CPU, cô lập 100%, cài sẵn bộ đồ nghề dịch ngược & điều tra nhẹ nhàng, build siêu nhanh)
+# Image cho Cloud Sandbox (Kho vũ khí đầy đủ từ MẮT tới TAY cho Agent: C/C++, Python, Reverse, Network, Web, Crypto)
 sandbox_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(
-        "git", "curl", "wget", "p7zip-full", "unzip",
-        "file", "binutils", "default-jre-headless"
+        # Bộ công cụ Developer & Build ("Tay"):
+        "build-essential", "clang", "make", "git", "curl", "wget", "jq",
+        # Bộ nén / giải nén đa định dạng:
+        "p7zip-full", "unzip", "zip", "tar", "xz-utils", "zstd", "bzip2",
+        # Bộ phân tích Binary & Reverse Engineering ("Mắt"):
+        "file", "binutils", "strace", "lsof", "procps", "default-jre-headless",
+        # Bộ điều tra Network, DNS, SSL & Reconnaissance ("Tai mắt mạng"):
+        "dnsutils", "whois", "net-tools", "iputils-ping", "nmap"
     )
     .pip_install(
-        "pefile", "capstone", "pyelftools", "requests", "fastapi"
+        # Binary & Decompilation:
+        "pefile", "capstone", "pyelftools",
+        # Networking & Scrape:
+        "requests", "httpx", "urllib3", "scapy", "beautifulsoup4", "lxml",
+        # Cryptography, Math & Image:
+        "cryptography", "sympy", "numpy", "pillow",
+        # Server endpoint:
+        "fastapi"
     )
 )
 
@@ -85,20 +98,47 @@ def sandbox(payload: Dict[str, Any]):
     auth_header = os.environ.get("MODEL_API_KEY", "")
     action = payload.get("action", "inspect")
 
-    # Tạo thư mục tạm cô lập trong RAM cloud
-    workdir = tempfile.mkdtemp(prefix="agent_sandbox_")
+    # Nếu có session_id thì giữ workspace liên tục giữa các bước, nếu không thì dùng tempdir dùng 1 lần
+    session_id = payload.get("session_id", "").strip()
+    is_ephemeral = not bool(session_id)
+    if is_ephemeral:
+        workdir = tempfile.mkdtemp(prefix="agent_sandbox_")
+    else:
+        # Làm sạch session_id để an toàn đường dẫn
+        safe_sess = "".join(c for c in session_id if c.isalnum() or c in "-_")[:40]
+        workdir = os.path.join(tempfile.gettempdir(), f"agent_sess_{safe_sess}")
+        os.makedirs(workdir, exist_ok=True)
+
     try:
         if action == "inspect":
             target_url = payload.get("url", "").strip()
             if not target_url:
                 return {"error": "Thiếu tham số url"}
 
+            # Nếu là link web (http/https), bóc tách thêm thông tin HTTP Header, SSL và Server
+            web_intel = {}
+            if target_url.startswith("http://") or target_url.startswith("https://"):
+                try:
+                    import requests
+                    head_res = requests.head(target_url, timeout=8, allow_redirects=True, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                    web_intel["http_status"] = head_res.status_code
+                    web_intel["final_url"] = head_res.url
+                    web_intel["server"] = head_res.headers.get("Server", "Unknown")
+                    web_intel["security_headers"] = {
+                        "content_security_policy": bool(head_res.headers.get("Content-Security-Policy")),
+                        "strict_transport_security": bool(head_res.headers.get("Strict-Transport-Security")),
+                        "x_frame_options": head_res.headers.get("X-Frame-Options", "MISSING"),
+                        "x_content_type_options": head_res.headers.get("X-Content-Type-Options", "MISSING"),
+                    }
+                except Exception as web_e:
+                    web_intel["recon_note"] = f"Không lấy được HEAD headers: {str(web_e)}"
+
             target_file = os.path.join(workdir, "target.bin")
             # Tải file về sandbox (giới hạn tối đa 150MB để tránh tràn bộ nhớ)
             dl_cmd = f"curl -sL --max-filesize 157286400 '{target_url}' -o '{target_file}'"
-            dl_res = subprocess.run(dl_cmd, shell=True, timeout=60, capture_output=True)
+            dl_res = subprocess.run(dl_cmd, shell=True, timeout=35, capture_output=True)
             if dl_res.returncode != 0 or not os.path.exists(target_file):
-                return {"error": f"Không thể tải target từ URL: {dl_res.stderr.decode()}"}
+                return {"error": f"Không thể tải target từ URL: {dl_res.stderr.decode()}", "web_intel": web_intel}
 
             # 1. Phân loại định dạng file
             file_type = subprocess.getoutput(f"file -b '{target_file}'")
@@ -107,12 +147,12 @@ def sandbox(payload: Dict[str, Any]):
             raw_strings = subprocess.getoutput(f"strings -n 8 '{target_file}'").splitlines()
             interesting_strings = [
                 s.strip()[:120] for s in raw_strings 
-                if any(k in s.lower() for k in ["http://", "https://", "api", "token", "key", "secret", "password", "cmd", "exec", "eval", ".dll", ".so", ".py", ".lua", ".wasm"])
+                if any(k in s.lower() for k in ["http://", "https://", "api", "token", "key", "secret", "password", "cmd", "exec", "eval", ".dll", ".so", ".py", ".lua", ".wasm", "flag"])
             ][:20]
 
-            # 3. Nếu là file nén (Zip / Game Package / Archive / APK), duyệt cấu trúc tệp
+            # 3. Nếu là file nén (Zip / Game Package / Archive / APK / IPA / JAR), duyệt cấu trúc tệp
             archive_tree = []
-            if any(ext in file_type.lower() for ext in ["zip", "archive", "package", "apk", "jar"]):
+            if any(ext in file_type.lower() for ext in ["zip", "archive", "package", "apk", "jar", "tar"]):
                 archive_tree = [line[:100] for line in subprocess.getoutput(f"7z l '{target_file}' | head -n 25").splitlines()]
 
             # 4. Phân tích PE Header (nếu là file EXE / DLL Windows)
@@ -132,16 +172,50 @@ def sandbox(payload: Dict[str, Any]):
                 except Exception as e:
                     pe_info["parse_error"] = str(e)
 
+            # 5. Phân tích ELF Header (nếu là Linux Binary / Shared Object)
+            elf_info = {}
+            if "elf" in file_type.lower():
+                try:
+                    elf_info["header"] = subprocess.getoutput(f"readelf -h '{target_file}' | head -n 12")
+                    elf_info["dynamic_libs"] = [line.strip() for line in subprocess.getoutput(f"readelf -d '{target_file}' | grep NEEDED").splitlines()[:8]]
+                except Exception as e:
+                    elf_info["parse_error"] = str(e)
+
             return {
                 "file_type": file_type,
                 "file_size_bytes": os.path.getsize(target_file),
+                "web_intel": web_intel if web_intel else None,
                 "suspicious_strings": interesting_strings,
                 "archive_structure": archive_tree if archive_tree else None,
                 "pe_analysis": pe_info if pe_info else None,
+                "elf_analysis": elf_info if elf_info else None,
+            }
+
+        elif action == "network":
+            # Điều tra hạ tầng mạng, DNS, WHOIS, SSL
+            target = payload.get("target", "").strip()
+            target_clean = target.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
+            if not target_clean:
+                return {"error": "Thiếu target (domain hoặc ip)"}
+
+            dns_a = subprocess.getoutput(f"dig +short A '{target_clean}'").splitlines()[:4]
+            dns_ns = subprocess.getoutput(f"dig +short NS '{target_clean}'").splitlines()[:3]
+            dns_mx = subprocess.getoutput(f"dig +short MX '{target_clean}'").splitlines()[:3]
+            dns_txt = subprocess.getoutput(f"dig +short TXT '{target_clean}'").splitlines()[:3]
+            
+            # Quét nhanh cert SSL
+            ssl_info = subprocess.getoutput(
+                f"echo | openssl s_client -connect '{target_clean}:443' -servername '{target_clean}' 2>/dev/null | openssl x509 -noout -issuer -subject -dates 2>/dev/null"
+            )
+
+            return {
+                "domain": target_clean,
+                "dns": { "A": dns_a, "NS": dns_ns, "MX": dns_mx, "TXT": dns_txt },
+                "ssl_certificate": ssl_info if ssl_info else "Không có hoặc không hỗ trợ port 443"
             }
 
         elif action == "execute":
-            # Thực thi script Python an toàn trong Sandbox
+            # Thực thi script Python / Bash an toàn trong Sandbox
             code = payload.get("code", "")
             lang = payload.get("language", "python").lower()
 
@@ -153,7 +227,8 @@ def sandbox(payload: Dict[str, Any]):
                     ["python3", script_path],
                     timeout=30,
                     capture_output=True,
-                    text=True
+                    text=True,
+                    cwd=workdir
                 )
                 return {
                     "stdout": res.stdout[:5000],
@@ -184,5 +259,5 @@ def sandbox(payload: Dict[str, Any]):
     except Exception as err:
         return {"error": f"Lỗi trong Sandbox: {str(err)}"}
     finally:
-        # Tự động hủy sạch mọi tệp trong RAM cloud sau khi hoàn tất
-        shutil.rmtree(workdir, ignore_errors=True)
+        if is_ephemeral:
+            shutil.rmtree(workdir, ignore_errors=True)

@@ -169,25 +169,34 @@ Deno.serve(async (req: Request) => {
     const MAX_TOOL_PHASE_MS = 85000; // Tối đa 85 giây cho chuỗi tool để chừa ít nhất 50 giây cho lượt stream tổng kết
 
     try {
+      const agentSessionId = user.id.replace(/-/g, "").slice(0, 16);
       const agentSystemPrompt = `Bạn là Tác tử AI Cấp cao (Autonomous Coder & Security Investigation Agent) sở hữu não bộ Qwen 32B Coder siêu việt và hệ thống Cloud Sandbox cô lập an toàn 100%.
-Bạn có quyền tự hành sử dụng các công cụ (tools) khi cần tìm kiếm, kiểm tra, dịch ngược hoặc chạy thử code:
+Bạn được trang bị KHO VŨ KHÍ CÔNG CỤ HOÀN CHỈNH từ MẮT tới TAY để tự hành điều tra, dịch ngược, quét mạng và lập trình:
 
-1. search: Tìm kiếm thông tin trên internet khi cần tra cứu tài liệu mới, thông số, thư viện.
+1. search: Tìm kiếm thông tin trên internet khi cần tra cứu tài liệu mới, thông số, thư viện, CVE, mã nguồn mở.
    Cú pháp: {"tool": "search", "query": "từ khóa ngắn gọn"}
 
-2. read: Đọc tài liệu chi tiết từ một URL / trang web.
+2. read: Đọc toàn bộ nội dung tài liệu / bài viết từ một trang web hoặc URL.
    Cú pháp: {"tool": "read", "url": "https://..."}
 
-3. sandbox_inspect: Tải tệp/binary/game/kho lưu trữ từ đường link vào Cloud Sandbox cô lập để kiểm tra định dạng (file), trích xuất chuỗi nhạy cảm (strings), duyệt tệp bên trong zip/apk/archive, kiểm tra PE headers.
+3. network_recon: Điều tra hạ tầng mạng, DNS records (A, NS, MX, TXT), WHOIS tên miền và chứng chỉ SSL/TLS của một domain hoặc IP.
+   Cú pháp: {"tool": "network_recon", "target": "domain.com"}
+
+4. sandbox_inspect: Tải tệp/binary/game/kho lưu trữ/URL vào Cloud Sandbox cô lập để phân tích toàn diện: định dạng (file), trích xuất strings nhạy cảm, PE header (Windows), ELF header (Linux), cấu trúc zip/apk/archive, và bảo mật HTTP web headers.
    Cú pháp: {"tool": "sandbox_inspect", "url": "https://..."}
 
-4. sandbox_execute: Thực thi an toàn một script Python hoặc Bash trong Cloud Sandbox cô lập để giải mã, thử nghiệm giải thuật hoặc bóc tách dữ liệu.
-   Cú pháp: {"tool": "sandbox_execute", "language": "python|bash", "code": "mã lệnh cần chạy"}
+5. sandbox_execute: Thực thi mã lệnh Bash hoặc Python trong Cloud Sandbox cô lập đã cài sẵn:
+   - Trình biên dịch C/C++: gcc, g++, clang, make, cmake
+   - Môi trường Python: requests, scapy, cryptography, pefile, capstone, pyelftools, beautifulsoup4, sympy, numpy, pillow
+   - Môi trường Java: Java 17 (openjdk-17) chạy sẵn sàng các công cụ như OWASP ZAP, JD-GUI, decompiler
+   - Công cụ mạng: nmap, curl, wget, dig, whois, netstat, iputils-ping
+   - Bộ giải nén: 7z, unzip, zip, tar, xz, zstd, bzip2
+   Cú pháp: {"tool": "sandbox_execute", "language": "bash|python", "code": "mã lệnh cần chạy"}
 
 QUY TẮC BẮT BUỘC:
-- Mọi hoạt động dịch ngược, tải tệp lạ hoặc thực thi code BẮT BUỘC phải dùng sandbox_inspect / sandbox_execute để đảm bảo an toàn tuyệt đối.
+- Mọi hoạt động dịch ngược, quét mạng, tải tệp lạ hoặc thực thi code BẮT BUỘC phải dùng các tool trên để đảm bảo an toàn tuyệt đối.
 - KHI CẦN DÙNG CÔNG CỤ: Bạn PHẢI xuất cú pháp JSON ngay tại dòng đầu tiên (Ví dụ: {"tool": "sandbox_execute", ...}). TUYỆT ĐỐI KHÔNG viết lời chào, lời dẫn hay giải thích trước JSON.
-- KHI KHÔNG CẦN DÙNG CÔNG CỤ (HOẶC ĐÃ CÓ KẾT QUẢ): Hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Engineer bằng tiếng Việt, trình bày đầy đủ mã nguồn, phân tích và hướng dẫn.`;
+- KHI ĐÃ CÓ KẾT QUẢ HOẶC TRẢ LỜI: Hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Engineer bằng tiếng Việt, trình bày đầy đủ mã nguồn, phân tích lỗ hổng và đề xuất khắc phục.`;
 
       const workingMessages = [
         { role: "system", content: agentSystemPrompt },
@@ -277,15 +286,31 @@ QUY TẮC BẮT BUỘC:
             workingMessages.push({ role: "assistant", content: rawContent });
             workingMessages.push({ role: "user", content: `[Hệ thống Observation - Nội dung ${url}]:\n${pageContent}` });
             continue;
-          } else if (toolType === "sandbox_inspect") {
-            const targetUrl = String(toolCall.url || "");
-            await sendEvent({ type: "step", text: `🛡️ Cloud Sandbox: Đang tải tệp vào môi trường cách ly...` });
+          } else if (toolType === "network_recon" || toolType === "network") {
+            const target = String(toolCall.target || toolCall.domain || toolCall.url || "");
+            await sendEvent({ type: "step", text: `📡 Network Recon: Đang điều tra DNS records, WHOIS & SSL của "${target}"...` });
             let observation = "";
             if (sandboxUrl) {
-              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "inspect", url: targetUrl });
+              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "network", target, session_id: agentSessionId });
+              const safeRes = sandboxRes.length > 2000 ? sandboxRes.slice(0, 2000) + "\n... [đã tóm lược]" : sandboxRes;
+              observation = `[Kết quả Network Recon]:\n${safeRes}`;
+              await sendEvent({ type: "step", text: `🌐 Network Recon: Hoàn tất trích xuất DNS & SSL certs` });
+            } else {
+              observation = `[Network Recon]: Chưa cấu hình SANDBOX_BASE_URL.`;
+              await sendEvent({ type: "step", text: `⚠️ Network Recon: Chưa cấu hình endpoint SANDBOX_BASE_URL` });
+            }
+            workingMessages.push({ role: "assistant", content: rawContent });
+            workingMessages.push({ role: "user", content: `[Hệ thống Observation]:\n${observation}` });
+            continue;
+          } else if (toolType === "sandbox_inspect") {
+            const targetUrl = String(toolCall.url || "");
+            await sendEvent({ type: "step", text: `🛡️ Cloud Sandbox: Đang tải tệp & trích xuất metadata...` });
+            let observation = "";
+            if (sandboxUrl) {
+              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "inspect", url: targetUrl, session_id: agentSessionId });
               const safeRes = sandboxRes.length > 2000 ? sandboxRes.slice(0, 2000) + "\n... [đã tóm lược]" : sandboxRes;
               observation = `[Kết quả phân tích Sandbox]:\n${safeRes}`;
-              await sendEvent({ type: "step", text: `⚙️ Cloud Sandbox: Hoàn tất trích xuất strings & cấu trúc tệp` });
+              await sendEvent({ type: "step", text: `⚙️ Cloud Sandbox: Hoàn tất trích xuất PE/ELF/Strings & cấu trúc tệp` });
             } else {
               observation = `[Cloud Sandbox]: Chưa cấu hình biến môi trường SANDBOX_BASE_URL trên Supabase. Hãy triển khai modal_agent.py và điền SANDBOX_BASE_URL.`;
               await sendEvent({ type: "step", text: `⚠️ Cloud Sandbox: Chưa cấu hình endpoint SANDBOX_BASE_URL` });
@@ -299,7 +324,7 @@ QUY TẮC BẮT BUỘC:
             await sendEvent({ type: "step", text: `💻 Cloud Sandbox: Đang thực thi mã ${language} trong môi trường cách ly...` });
             let observation = "";
             if (sandboxUrl) {
-              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "execute", language, code });
+              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "execute", language, code, session_id: agentSessionId });
               const safeRes = sandboxRes.length > 2000 ? sandboxRes.slice(0, 2000) + "\n... [đã tóm lược]" : sandboxRes;
               observation = `[Kết quả thực thi Sandbox]:\n${safeRes}`;
               await sendEvent({ type: "step", text: `✅ Cloud Sandbox: Đã nhận stdout/stderr từ container` });
