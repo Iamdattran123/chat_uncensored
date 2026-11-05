@@ -95,7 +95,7 @@ async function callCloudSandbox(sandboxUrl: string, modalKey: string, payload: R
         "authorization": `Bearer ${modalKey}`,
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(25000), // Timeout 25s cho các lệnh sandbox để tránh tràn thời gian Edge Function
+      signal: AbortSignal.timeout(60000), // Timeout 60s cho các lệnh sandbox (đặc biệt Playwright Browser Automation)
     });
 
     if (!res.ok) {
@@ -166,7 +166,7 @@ Deno.serve(async (req: Request) => {
   // Chạy background Agent Loop với Coder 32B & Cloud Sandbox
   (async () => {
     const startTime = Date.now();
-    const MAX_TOOL_PHASE_MS = 65000; // Tối đa 65 giây cho chuỗi tool để chừa ít nhất 70-80 giây cho lượt stream tổng kết hoàn chỉnh
+    const MAX_TOOL_PHASE_MS = 100000; // Tối đa 100 giây cho chuỗi tool để các lệnh Playwright/Recon hoàn thành trọn vẹn
 
     try {
       const agentSessionId = user.id.replace(/-/g, "").slice(0, 16);
@@ -188,6 +188,10 @@ NGUYÊN TẮC HÀNH VI CỐT LÕI:
 - TỰ ĐỘNG HÓA TRÌNH DUYỆT & ĐĂNG NHẬP / TẠO TÀI KHOẢN (USER EMULATION & BROWSER AUTOMATION):
   + Sandbox đã cài sẵn Playwright (Chromium headless) để mô phỏng người dùng thật: render JavaScript/SPA, tự động điền form đăng ký tài khoản, bấm nút đăng nhập và trích xuất cookie session.
   + Duy trì phiên làm việc: Luôn lưu và nạp trạng thái session (cookies/storage) vào tệp 'browser_state.json' trong thư mục làm việc để giữ phiên đăng nhập xuyên suốt các lượt chat.
+  + QUY TẮC TỐI ƯU PLAYWRIGHT TRÁNH TREO TIMEOUT:
+    * Khởi chạy Chromium: p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'])
+    * Tải trang: page.goto(url, timeout=20000, wait_until='domcontentloaded')
+    * Sau khi bấm nút Submit: Tuyệt đối KHÔNG dùng page.wait_for_navigation(timeout=10000) vì các trang hiện đại (React/Vue/Ajax) không reload toàn trang gây timeout. Thay vào đó hãy dùng page.wait_for_timeout(3500) rồi kiểm tra page.url, in text thông báo thành công hoặc lỗi ra stdout!
   + TƯƠNG TÁC THU THẬP OTP / THÔNG TIN (HUMAN-IN-THE-LOOP):
     * Khi gặp rào cản xác thực (trang web yêu cầu mã OTP gửi về Gmail/SMS, hoặc cần tài khoản/mật khẩu cá nhân): Agent hãy thực hiện đến bước nhập email/gửi OTP, sau đó tạm dừng và thông báo rõ ràng cho người dùng (Ví dụ: "Hệ thống [tên web] đã gửi mã xác thực OTP về Gmail của bạn. Hãy gửi cho tôi mã OTP để tôi điền vào trình duyệt và tiếp tục kiểm thử quyền hạn bên trong!").
     * Ở lượt chat tiếp theo khi người dùng cung cấp OTP, Agent nạp 'browser_state.json', dùng Playwright điền OTP vào ô xác thực, bấm xác nhận để hoàn tất đăng nhập và tiếp tục rà soát các lỗ hổng Authenticated (như IDOR, Phân quyền ngang/dọc, API ngầm trong Dashboard).

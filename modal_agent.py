@@ -314,7 +314,7 @@ def sandbox(payload: Dict[str, Any]):
                     f.write(clean_code)
                 res = subprocess.run(
                     ["python3", script_path],
-                    timeout=30,
+                    timeout=55,
                     capture_output=True,
                     text=True,
                     cwd=workdir
@@ -328,7 +328,7 @@ def sandbox(payload: Dict[str, Any]):
                 res = subprocess.run(
                     code,
                     shell=True,
-                    timeout=30,
+                    timeout=55,
                     capture_output=True,
                     text=True,
                     cwd=workdir
