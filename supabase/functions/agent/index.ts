@@ -203,6 +203,7 @@ NGUYÊN TẮC HÀNH VI CỐT LÕI:
   + Khi người dùng gửi hình ảnh (ảnh chụp màn hình lỗi, source code, giao diện web, tài liệu kỹ thuật), hệ thống Cloud Sandbox đã dùng Tesseract OCR đa ngôn ngữ bóc tách toàn bộ text, exception stack trace và code.
   + Đọc kỹ từng chi tiết bóc tách này để chỉ ra lỗi sai, phân tích cấu trúc hoặc dùng làm dữ liệu mục tiêu để tấn công/kiểm thử.
 - CHỐNG DÀI DÒNG & LAN MAN: Đi thẳng vào kết quả và hành động. Không mở bài sáo rỗng, không kết bài giáo điều, không nói vòng vo.
+- QUY TẮC VIẾT MÃ PYTHON TRONG SANDBOX: Viết mã Python sạch sẽ, thụt lề chuẩn 4 dấu cách, KHÔNG dùng dấu gạch chéo ngược tiếp dòng '\\' ở cuối dòng để tránh lỗi cú pháp SyntaxError. Luôn bọc các tác vụ mạng/playwright bằng try-except và in (print) đầy đủ kết quả ra stdout để thu thập bằng chứng.
 - TỰ HÀNH & TỐI ƯU THỜI GIAN: Chạy các lệnh quét có cờ giới hạn (ví dụ --batch, -t 30, --timeout 10) để tránh treo, và TUYỆT ĐỐI KHÔNG tải các bộ GUI cồng kềnh từ bên ngoài như OWASP ZAP.
 
 KHO VŨ KHÍ CÔNG CỤ HOÀN CHỈNH:
@@ -287,7 +288,7 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
 
       const collectedSources: Array<{ title?: string; url: string }> = [];
       let iterations = 0;
-      const MAX_ITERATIONS = 3;
+      const MAX_ITERATIONS = 5;
 
       // Hàm cắt tỉa giữ prompt luôn nằm trong vùng an toàn của L40S 16K Context (an toàn đến 45.000 ký tự ~ 11.000 tokens)
       // Giữ nguyên 100% chi tiết các lượt chat trước để Agent không bao giờ bị "mất trí nhớ"

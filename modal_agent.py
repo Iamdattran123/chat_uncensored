@@ -300,9 +300,18 @@ def sandbox(payload: Dict[str, Any]):
             lang = payload.get("language", "python").lower()
 
             if lang == "python":
+                # Chuẩn hóa mã Python: Khắc phục triệt để lỗi escape JSON và line continuation (\ )
+                import re
+                clean_code = code
+                if "\\n" in clean_code and "\n" not in clean_code:
+                    clean_code = clean_code.replace("\\n", "\n").replace("\\t", "    ").replace('\\"', '"').replace("\\'", "'")
+                # Xóa khoảng trắng sau dấu gạch chéo ngược cuối dòng (tránh SyntaxError unexpected character after line continuation)
+                clean_lines = [re.sub(r'\\\s+$', '\\\\', line) for line in clean_code.splitlines()]
+                clean_code = "\n".join(clean_lines)
+
                 script_path = os.path.join(workdir, "script.py")
                 with open(script_path, "w", encoding="utf-8") as f:
-                    f.write(code)
+                    f.write(clean_code)
                 res = subprocess.run(
                     ["python3", script_path],
                     timeout=30,
