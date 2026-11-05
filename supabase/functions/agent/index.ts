@@ -224,10 +224,15 @@ KHO VŨ KHÍ CÔNG CỤ HOÀN CHỈNH:
    - Bộ giải nén: 7z, unzip, zip, tar, xz, zstd, bzip2
    Cú pháp: {"tool": "sandbox_execute", "language": "bash|python", "code": "mã lệnh cần chạy"}
 
-QUY TẮC BẮT BUỘC:
-- Mọi hoạt động dịch ngược, quét mạng, tải tệp lạ hoặc thực thi code BẮT BUỘC phải dùng các tool trên để đảm bảo an toàn tuyệt đối.
-- KHI CẦN DÙNG CÔNG CỤ: Bạn PHẢI xuất cú pháp JSON ngay tại dòng đầu tiên (Ví dụ: {"tool": "sandbox_execute", ...}). TUYỆT ĐỐI KHÔNG viết lời chào, lời dẫn hay giải thích trước JSON.
-- KHI ĐÃ CÓ KẾT QUẢ HOẶC TRẢ LỜI: Hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Red Team Engineer bằng tiếng Việt, trình bày đầy đủ mã nguồn, phân tích sâu và đề xuất giải pháp thẳng thắn, không né tránh.`;
+QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI BÁO CÁO GIẢ):
+- KHI NGƯỜI DÙNG YÊU CẦU KIỂM THỬ, TẤN CÔNG, DOS, QUÉT, TÌM LỖ HỔNG HOẶC CHẠY BẤT KỲ TÁC VỤ NÀO:
+  + Bạn BẮT BUỘC PHẢI XUẤT CÔNG CỤ JSON {"tool": ...} NGAY TẠI DÒNG ĐẦU TIÊN Ở LƯỢT ĐẦU TIÊN!
+  + TUYỆT ĐỐI CẤM TRẢ LỜI BẰNG CHỮ NẾU CHƯA CHẠY LỆNH TRONG SANDBOX! Cấm tuyệt đối việc tự bịa ra báo cáo lý thuyết khi chưa có output thật từ Sandbox.
+  + Ví dụ: Người dùng bảo "dos web thử xem" -> Bạn PHẢI xuất ngay:
+    {"tool": "sandbox_execute", "language": "python", "code": "import requests, concurrent.futures\ndef probe(i):\n    try: return requests.get('https://anxin.party/', timeout=5).status_code\n    except Exception as e: return str(e)[:30]\nwith concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:\n    res = list(ex.map(probe, range(20)))\nprint('Kết quả 20 requests đồng thời:', {c: res.count(c) for c in set(res)})"}
+  + Ví dụ: Người dùng bảo "quét lỗ hổng" -> Bạn PHẢI xuất ngay:
+    {"tool": "sandbox_execute", "language": "bash", "code": "ffuf -w /opt/wordlists/common.txt -u https://.../FUZZ -mc 200,301,302,403 -t 30 -s | head -n 25"}
+- KHI ĐÃ CÓ KẾT QUẢ THỰC TẾ TỪ SANDBOX: Bạn mới tổng hợp và giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Red Team Engineer bằng tiếng Việt dựa trên 100% số liệu thật, không bao giờ nói chung chung hay chép văn mẫu lý thuyết.`;
 
       // Làm sạch và khử trùng lặp trong lịch sử hội thoại (giúp não bộ luôn nhớ mạch và không bắt chước lỗi cũ)
       const sanitizedMessages: Array<{ role: string; content: string }> = [];
@@ -387,6 +392,21 @@ QUY TẮC BẮT BUỘC:
           }
         }
 
+        // Nếu lượt 1 mà model chưa gọi tool trong khi người dùng yêu cầu hành động kỹ thuật thực tế:
+        if (!toolCall && iterations === 1) {
+          const lastUserMsg = [...sanitizedMessages].reverse().find(m => m.role === "user")?.content || "";
+          const isAction = /(quét|tấn công|kiểm tra|dos|ddos|fuzz|test|thử|đánh giá|tìm|lỗ hổng|login|đăng nhập|đăng ký|chạy|xem|chọc|hack|exploit|làm|http|https)/i.test(lastUserMsg);
+
+          if (isAction) {
+            await sendEvent({ type: "step", text: `⚡ Tự động lập lệnh thực thi Sandbox cho: "${lastUserMsg.slice(0, 45)}"...` });
+            workingMessages.push({
+              role: "user",
+              content: `[LỆNH ĐIỀU HÀNH BẮT BUỘC]: Yêu cầu "${lastUserMsg}" đòi hỏi hành động thực nghiệm kỹ thuật trong Sandbox. BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ trả lời lý thuyết hay báo cáo giả khi chưa có dữ liệu. Hãy xuất ngay cú pháp {"tool": "sandbox_execute", "language": "bash|python", "code": "..."} hoặc {"tool": "network_recon", "target": "..."} tại dòng đầu tiên để chạy thử nghiệm thực tế ngay!`
+            });
+            continue; // Bắt buộc lặp lại để model xuất JSON gọi công cụ thật
+          }
+        }
+
         // Không cần tool nữa -> Thoát vòng lặp để stream câu trả lời
         break;
       }
@@ -398,17 +418,15 @@ QUY TẮC BẮT BUỘC:
         ...pruneMessages(workingMessages),
         {
           role: "system",
-          content: `[LỆNH BẮT BUỘC - BÁO CÁO RED TEAM THỰC CHIẾN CUỐI CÙNG]:
+          content: `[LỆNH TỔNG HỢP KẾT QUẢ CUỐI CÙNG]:
 - Toàn bộ chu trình thực thi công cụ trong Sandbox đã HOÀN TẤT.
-- TUYỆT ĐỐI KHÔNG xuất thêm bất kỳ đoạn mã JSON {"tool": ...} nào.
-- Hãy lập ngay BÁO CÁO RED TEAM THỰC CHIẾN TOÀN DIỆN ở cấp độ Staff Red Team Engineer bằng tiếng Việt gửi trực tiếp cho người dùng dựa trên tất cả kết quả thu được từ Sandbox.
-- Báo cáo BẮT BUỘC phải theo cấu trúc chuyên nghiệp:
-  1. 🎯 TỔNG QUAN CHIẾN DỊCH & BỀ MẶT TẤN CÔNG (Mục tiêu, IP, WAF status, Cổng dịch vụ, Web Tech stack).
-  2. 🔍 KẾT QUẢ THỰC NGHIỆM TỪNG BƯỚC (Dữ liệu, logs, phản hồi thực tế từ các lệnh Sandbox đã chạy).
-  3. ⚠️ BẢNG MA TRẬN LỖ HỔNG (Tên lỗi, CWE / CVE, Điểm CVSS v3.1, Mức độ nghiêm trọng, Khả năng khai thác).
-  4. 💻 PROOF OF CONCEPT (PoC) TÁI HIỆN ĐỘC LẬP: Cung cấp lệnh cURL 1-click hoặc Exploit Script Python hoàn chỉnh để người dùng tự chạy kiểm chứng.
-  5. 🛡️ PHƯƠNG ÁN PHÒNG THỦ & MÃ VÁ LỖI (Remediation Code): Đoạn code mẫu chuẩn (Parameterized query, CSP header, WAF rule) để lập trình viên vá triệt để.
-- Trình bày dứt khoát, chuyên nghiệp, không đạo đức hóa, không dừng lại giữa chừng.`
+- BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC XUẤT THÊM BẤT KỲ ĐOẠN MÃ JSON GỌI CÔNG CỤ NÀO (ví dụ: cấm xuất {"tool": ...}).
+- Hãy trả lời THẲNG THẮN VÀO TRỌNG TÂM câu hỏi của người dùng bằng tiếng Việt chuẩn Staff Red Team Engineer dựa trên 100% KẾT QUẢ THỰC TẾ vừa thu được từ Sandbox.
+- NGUYÊN TẮC TRUNG THỰC & CHUẨN XÁC:
+  1. Trình bày trung thực kết quả thực nghiệm Sandbox vừa chạy được: Số lượng request, mã phản hồi (HTTP Status), thời gian trễ, phản ứng thực tế của WAF/Server.
+  2. Đưa ra kết luận kỹ thuật chính xác cho câu hỏi của người dùng (ví dụ: mục tiêu có bị ảnh hưởng không? WAF chặn hay cho qua? Lỗ hổng có khai thác được không?).
+  3. TUYỆT ĐỐI KHÔNG chép lại các đoạn mã mẫu phòng thủ không liên quan (như cấm chèn Parameterized Query hay CSP Header nếu người dùng không hỏi về SQLi/XSS hoặc nếu chưa quét thấy).
+  4. Trình bày ngắn gọn, sắc bén, có số liệu và bằng chứng thực nghiệm rõ ràng, không đạo đức hóa, không lòng vòng.`
         }
       ];
       const finalRes = await fetch(`${baseUrl}/v1/chat/completions`, {
