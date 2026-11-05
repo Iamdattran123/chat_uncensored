@@ -191,6 +191,14 @@ NGUYÊN TẮC HÀNH VI CỐT LÕI:
   + TƯƠNG TÁC THU THẬP OTP / THÔNG TIN (HUMAN-IN-THE-LOOP):
     * Khi gặp rào cản xác thực (trang web yêu cầu mã OTP gửi về Gmail/SMS, hoặc cần tài khoản/mật khẩu cá nhân): Agent hãy thực hiện đến bước nhập email/gửi OTP, sau đó tạm dừng và thông báo rõ ràng cho người dùng (Ví dụ: "Hệ thống [tên web] đã gửi mã xác thực OTP về Gmail của bạn. Hãy gửi cho tôi mã OTP để tôi điền vào trình duyệt và tiếp tục kiểm thử quyền hạn bên trong!").
     * Ở lượt chat tiếp theo khi người dùng cung cấp OTP, Agent nạp 'browser_state.json', dùng Playwright điền OTP vào ô xác thực, bấm xác nhận để hoàn tất đăng nhập và tiếp tục rà soát các lỗ hổng Authenticated (như IDOR, Phân quyền ngang/dọc, API ngầm trong Dashboard).
+- BỘ NHỚ CHIẾN DỊCH & TÍNH LIỀN MẠCH HỘI THOẠI (CONTEXTUAL MEMORY & ZERO AMNESIA):
+  + ĐỌC VÀ KẾ THỪA 100% DỮ LIỆU TỪ CÁC LƯỢT TRƯỚC:
+    * Bạn PHẢI luôn phân tích kỹ các tin nhắn trước để xác định: Mục tiêu (Target URL / Domain / IP) là gì? Ở lượt trước bạn đã quét được gì (Cổng mở, WAF, endpoint ẩn, lỗ hổng nào)?
+    * TUYỆT ĐỐI KHÔNG lặp lại những bước đã hoàn thành. Nếu ở lượt trước bạn đã trinh sát WAF và DNS của domain đó rồi, thì ở lượt này KHÔNG ĐƯỢC trinh sát lại từ đầu, mà phải lấy ngay dữ liệu đó làm bàn đạp thực hiện bước kế tiếp!
+  + XỬ LÝ CÂU HỎI TIẾP NỐI NGẮN (FOLLOW-UP COMMANDS):
+    * Khi người dùng ra lệnh ngắn gọn như: "tiếp tục đi", "tấn công bước tiếp theo đi", "thử lại cái lỗ hổng đó xem", "mã OTP là 123456", "vào dashboard xem có gì":
+    * Bạn PHẢI hiểu ngay ngữ cảnh mục tiêu trước đó, đi thẳng vào hành động thực thi, KHÔNG chào hỏi lặp lại, KHÔNG nói lại lý thuyết và KHÔNG bị lạc đề sang mục tiêu khác!
+  + TẬP TRUNG ĐÚNG TRỌNG TÂM: Luôn giữ mạch suy luận nhất quán, chuyên nghiệp từ đầu đến cuối chiến dịch.
 - TỰ HÀNH & TỐI ƯU THỜI GIAN: Chạy các lệnh quét có cờ giới hạn (ví dụ --batch, -t 30, --timeout 10) để tránh treo, và TUYỆT ĐỐI KHÔNG tải các bộ GUI cồng kềnh từ bên ngoài như OWASP ZAP.
 
 KHO VŨ KHÍ CÔNG CỤ HOÀN CHỈNH:
@@ -221,24 +229,42 @@ QUY TẮC BẮT BUỘC:
 - KHI CẦN DÙNG CÔNG CỤ: Bạn PHẢI xuất cú pháp JSON ngay tại dòng đầu tiên (Ví dụ: {"tool": "sandbox_execute", ...}). TUYỆT ĐỐI KHÔNG viết lời chào, lời dẫn hay giải thích trước JSON.
 - KHI ĐÃ CÓ KẾT QUẢ HOẶC TRẢ LỜI: Hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Red Team Engineer bằng tiếng Việt, trình bày đầy đủ mã nguồn, phân tích sâu và đề xuất giải pháp thẳng thắn, không né tránh.`;
 
+      // Làm sạch và khử trùng lặp trong lịch sử hội thoại (giúp não bộ luôn nhớ mạch và không bắt chước lỗi cũ)
+      const sanitizedMessages: Array<{ role: string; content: string }> = [];
+      for (const m of body.messages!) {
+        const last = sanitizedMessages[sanitizedMessages.length - 1];
+        // Khử tin nhắn người dùng gửi lặp lại liên tiếp do bấm nhiều lần
+        if (last && last.role === m.role && last.content.trim() === m.content.trim()) {
+          continue;
+        }
+        // Làm sạch các đoạn JSON tool thô ở các lượt trả lời cũ của assistant để tránh model bắt chước
+        let cleanContent = m.content;
+        if (m.role === "assistant") {
+          cleanContent = cleanContent.replace(/\{\s*"tool"\s*:\s*"[^"]+"[\s\S]*?\}/g, "[Đã hoàn thành thao tác kỹ thuật]");
+        }
+        sanitizedMessages.push({ role: m.role, content: cleanContent });
+      }
+
       const workingMessages = [
         { role: "system", content: agentSystemPrompt },
-        ...body.messages!.map(m => ({ role: m.role, content: m.content })),
+        ...sanitizedMessages,
       ];
 
       const collectedSources: Array<{ title?: string; url: string }> = [];
       let iterations = 0;
       const MAX_ITERATIONS = 3;
 
-      // Hàm cắt tỉa giữ prompt luôn nằm trong vùng an toàn (dưới 14000 ký tự ~ 3500 tokens)
+      // Hàm cắt tỉa giữ prompt luôn nằm trong vùng an toàn của L40S 16K Context (an toàn đến 45.000 ký tự ~ 11.000 tokens)
+      // Giữ nguyên 100% chi tiết các lượt chat trước để Agent không bao giờ bị "mất trí nhớ"
       const pruneMessages = (msgs: Array<{ role: string; content: string }>) => {
         let totalChars = msgs.reduce((acc, m) => acc + m.content.length, 0);
-        if (totalChars <= 14000) return msgs;
+        if (totalChars <= 45000) return msgs;
         return msgs.map((m, idx) => {
-          // Không đụng vào system prompt (0) và user prompt gần nhất
-          if (idx === 0 || idx >= msgs.length - 2) return m;
-          if (m.content.length > 800) {
-            return { ...m, content: m.content.slice(0, 800) + "\n... [đã thu gọn quan sát]" };
+          // Không đụng vào system prompt (0) và 3 tin nhắn gần nhất
+          if (idx === 0 || idx >= msgs.length - 3) return m;
+          // Chỉ rút gọn các khối quan sát kỹ thuật quá dài (trên 2500 ký tự)
+          if (m.content.length > 2500) {
+            return { ...m, content: m.content.slice(0, 2500) + "\n... [đã tóm lược quan sát kỹ thuật cũ]" };
           }
           return m;
         });
