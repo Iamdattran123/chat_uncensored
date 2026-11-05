@@ -28,22 +28,33 @@ sandbox_image = (
     .apt_install(
         # Bộ công cụ Developer & Build ("Tay"):
         "build-essential", "clang", "make", "git", "curl", "wget", "jq",
+        "libssl-dev", "libffi-dev",
         # Bộ nén / giải nén đa định dạng:
         "p7zip-full", "unzip", "zip", "tar", "xz-utils", "zstd", "bzip2",
         # Bộ phân tích Binary & Reverse Engineering ("Mắt"):
         "file", "binutils", "strace", "lsof", "procps", "default-jre-headless",
         # Bộ điều tra Network, DNS, SSL & Reconnaissance ("Tai mắt mạng"):
-        "dnsutils", "whois", "net-tools", "iputils-ping", "nmap"
+        "dnsutils", "whois", "net-tools", "iputils-ping", "nmap",
     )
     .pip_install(
-        # Binary & Decompilation:
-        "pefile", "capstone", "pyelftools",
+        # Binary Exploitation & Reversing:
+        "pwntools", "ropper", "pefile", "capstone", "pyelftools",
+        # Web Pentesting, WAF Recon & Exploitation:
+        "sqlmap", "wafw00f",
         # Networking & Scrape:
         "requests", "httpx", "urllib3", "scapy", "beautifulsoup4", "lxml",
         # Cryptography, Math & Image:
         "cryptography", "sympy", "numpy", "pillow",
         # Server endpoint:
         "fastapi"
+    )
+    .run_commands(
+        # Cài đặt Nuclei CLI v3.3.5 (ProjectDiscovery - Quét CVE & lỗ hổng hàng đầu):
+        "curl -sL https://github.com/projectdiscovery/nuclei/releases/download/v3.3.5/nuclei_3.3.5_linux_amd64.zip -o /tmp/nuclei.zip && unzip -o /tmp/nuclei.zip -d /usr/local/bin/ && rm -f /tmp/nuclei.zip && chmod +x /usr/local/bin/nuclei",
+        # Cài đặt FFUF v2.1.0 (Fast Web Fuzzer - Fuzz endpoint, đường dẫn ngầm):
+        "curl -sL https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz -o /tmp/ffuf.tar.gz && tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin/ ffuf && rm -f /tmp/ffuf.tar.gz && chmod +x /usr/local/bin/ffuf",
+        # Tải từ điển SecLists chuẩn cho FFUF & Directory Fuzzing:
+        "mkdir -p /opt/wordlists && curl -sL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt -o /opt/wordlists/common.txt",
     )
 )
 
