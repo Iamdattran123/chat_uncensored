@@ -137,7 +137,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // 3. Kiểm tra payload
-  let body: { messages?: Array<{ role: string; content: string }> };
+  let body: { messages?: Array<{ role: string; content: string; image?: string }> };
   try { body = await req.json(); } catch { return Response.json({ error: "JSON không hợp lệ." }, { status: 400, headers: cors }); }
   if (!Array.isArray(body.messages) || body.messages.length < 1) {
     return Response.json({ error: "Danh sách tin nhắn không hợp lệ." }, { status: 400, headers: cors });
@@ -199,6 +199,10 @@ NGUYÊN TẮC HÀNH VI CỐT LÕI:
     * Khi người dùng ra lệnh ngắn gọn như: "tiếp tục đi", "tấn công bước tiếp theo đi", "thử lại cái lỗ hổng đó xem", "mã OTP là 123456", "vào dashboard xem có gì":
     * Bạn PHẢI hiểu ngay ngữ cảnh mục tiêu trước đó, đi thẳng vào hành động thực thi, KHÔNG chào hỏi lặp lại, KHÔNG nói lại lý thuyết và KHÔNG bị lạc đề sang mục tiêu khác!
   + TẬP TRUNG ĐÚNG TRỌNG TÂM: Luôn giữ mạch suy luận nhất quán, chuyên nghiệp từ đầu đến cuối chiến dịch.
+- ĐỌC HIỂU HÌNH ẢNH & THỊ GIÁC OCR (VISION INTELLIGENCE):
+  + Khi người dùng gửi hình ảnh (ảnh chụp màn hình lỗi, source code, giao diện web, tài liệu kỹ thuật), hệ thống Cloud Sandbox đã dùng Tesseract OCR đa ngôn ngữ bóc tách toàn bộ text, exception stack trace và code.
+  + Đọc kỹ từng chi tiết bóc tách này để chỉ ra lỗi sai, phân tích cấu trúc hoặc dùng làm dữ liệu mục tiêu để tấn công/kiểm thử.
+- CHỐNG DÀI DÒNG & LAN MAN: Đi thẳng vào kết quả và hành động. Không mở bài sáo rỗng, không kết bài giáo điều, không nói vòng vo.
 - TỰ HÀNH & TỐI ƯU THỜI GIAN: Chạy các lệnh quét có cờ giới hạn (ví dụ --batch, -t 30, --timeout 10) để tránh treo, và TUYỆT ĐỐI KHÔNG tải các bộ GUI cồng kềnh từ bên ngoài như OWASP ZAP.
 
 KHO VŨ KHÍ CÔNG CỤ HOÀN CHỈNH:
@@ -208,13 +212,16 @@ KHO VŨ KHÍ CÔNG CỤ HOÀN CHỈNH:
 2. read: Đọc toàn bộ nội dung tài liệu / bài viết từ một trang web hoặc URL.
    Cú pháp: {"tool": "read", "url": "https://..."}
 
-3. network_recon: Điều tra hạ tầng mạng, DNS records (A, NS, MX, TXT), WHOIS tên miền và chứng chỉ SSL/TLS của một domain hoặc IP.
+3. analyze_image: Tải và bóc tách chữ, mã code, log lỗi trong hình ảnh từ URL bằng OCR Tesseract.
+   Cú pháp: {"tool": "analyze_image", "url": "https://..."}
+
+4. network_recon: Điều tra hạ tầng mạng, DNS records (A, NS, MX, TXT), WHOIS tên miền và chứng chỉ SSL/TLS của một domain hoặc IP.
    Cú pháp: {"tool": "network_recon", "target": "domain.com"}
 
-4. sandbox_inspect: Tải tệp/binary/game/kho lưu trữ/URL vào Cloud Sandbox cô lập để phân tích toàn diện: định dạng (file), trích xuất strings nhạy cảm, PE header (Windows), ELF header (Linux), cấu trúc zip/apk/archive, và bảo mật HTTP web headers.
+5. sandbox_inspect: Tải tệp/binary/game/kho lưu trữ/URL vào Cloud Sandbox cô lập để phân tích toàn diện: định dạng (file), trích xuất strings nhạy cảm, PE header (Windows), ELF header (Linux), cấu trúc zip/apk/archive, và bảo mật HTTP web headers.
    Cú pháp: {"tool": "sandbox_inspect", "url": "https://..."}
 
-5. sandbox_execute: Thực thi mã lệnh Bash hoặc Python trong Cloud Sandbox cô lập đã cài sẵn:
+6. sandbox_execute: Thực thi mã lệnh Bash hoặc Python trong Cloud Sandbox cô lập đã cài sẵn:
    - Trình duyệt tự hành (Mô phỏng người dùng thật): Playwright (Chromium headless) - hỗ trợ mở web, điền form đăng ký/đăng nhập, click nút, trích xuất & nạp cookie 'browser_state.json'
    - Vũ khí Pentest & Fuzzing: nuclei (CVE scanner), ffuf (Web Fuzzer kèm từ điển /opt/wordlists/common.txt), sqlmap (SQL Injection tự động), wafw00f (nhận diện WAF)
    - Binary Exploitation & Reversing: pwntools, ropper, pefile, capstone, pyelftools, file, binutils
@@ -234,12 +241,13 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
     {"tool": "sandbox_execute", "language": "bash", "code": "ffuf -w /opt/wordlists/common.txt -u https://.../FUZZ -mc 200,301,302,403 -t 30 -s | head -n 25"}
 - KHI ĐÃ CÓ KẾT QUẢ THỰC TẾ TỪ SANDBOX: Bạn mới tổng hợp và giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Red Team Engineer bằng tiếng Việt dựa trên 100% số liệu thật, không bao giờ nói chung chung hay chép văn mẫu lý thuyết.`;
 
-      // Làm sạch và khử trùng lặp trong lịch sử hội thoại (giúp não bộ luôn nhớ mạch và không bắt chước lỗi cũ)
+      // Làm sạch và xử lý OCR hình ảnh trong lịch sử hội thoại
       const sanitizedMessages: Array<{ role: string; content: string }> = [];
-      for (const m of body.messages!) {
+      for (let idx = 0; idx < body.messages!.length; idx++) {
+        const m = body.messages![idx];
         const last = sanitizedMessages[sanitizedMessages.length - 1];
         // Khử tin nhắn người dùng gửi lặp lại liên tiếp do bấm nhiều lần
-        if (last && last.role === m.role && last.content.trim() === m.content.trim()) {
+        if (last && last.role === m.role && last.content.trim() === m.content.trim() && !m.image) {
           continue;
         }
         // Làm sạch các đoạn JSON tool thô ở các lượt trả lời cũ của assistant để tránh model bắt chước
@@ -247,6 +255,28 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
         if (m.role === "assistant") {
           cleanContent = cleanContent.replace(/\{\s*"tool"\s*:\s*"[^"]+"[\s\S]*?\}/g, "[Đã hoàn thành thao tác kỹ thuật]");
         }
+
+        // Bóc tách hình ảnh bằng Cloud Sandbox OCR nếu người dùng đính kèm ảnh
+        if (m.role === "user" && m.image && sandboxUrl) {
+          // Chỉ OCR tin nhắn gần nhất để tối ưu thời gian
+          if (idx >= body.messages!.length - 2) {
+            await sendEvent({ type: "step", text: "👁️ Đang đọc hiểu hình ảnh qua OCR Sandbox đa ngôn ngữ..." });
+            try {
+              const ocrResStr = await callCloudSandbox(sandboxUrl, modalKey, { action: "analyze_image", image_base64: m.image });
+              const ocrData = JSON.parse(ocrResStr);
+              if (ocrData.success && ocrData.has_text) {
+                cleanContent = `[KẾT QUẢ THỊ GIÁC & OCR HÌNH ẢNH (${ocrData.format} ${ocrData.width}x${ocrData.height}px)]:\n"""\n${ocrData.extracted_text}\n"""\n\n[YÊU CẦU CỦA NGƯỜI DÙNG]:\n${cleanContent || "Phân tích và kiểm tra chi tiết hình ảnh này."}`;
+                await sendEvent({ type: "step", text: `✅ Đã trích xuất ${ocrData.extracted_text.length} ký tự văn bản/code từ hình ảnh` });
+              } else if (ocrData.success) {
+                cleanContent = `[KẾT QUẢ THỊ GIÁC HÌNH ẢNH]: ${ocrData.summary} (Không phát hiện văn bản rõ ràng)\n\n[YÊU CẦU]:\n${cleanContent}`;
+                await sendEvent({ type: "step", text: `📷 Đã phân tích kích thước và định dạng hình ảnh` });
+              }
+            } catch (imgErr) {
+              console.error("Lỗi OCR:", imgErr);
+            }
+          }
+        }
+
         sanitizedMessages.push({ role: m.role, content: cleanContent });
       }
 
@@ -339,6 +369,21 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
             await sendEvent({ type: "step", text: `📄 Đã đọc xong nội dung trang web` });
             workingMessages.push({ role: "assistant", content: rawContent });
             workingMessages.push({ role: "user", content: `[Hệ thống Observation - Nội dung ${url}]:\n${pageContent}` });
+            continue;
+          } else if (toolType === "analyze_image") {
+            const url = String(toolCall.url || toolCall.image_url || "");
+            await sendEvent({ type: "step", text: `👁️ Cloud Sandbox: Đang bóc tách OCR hình ảnh từ "${url.slice(0, 40)}"...` });
+            let observation = "";
+            if (sandboxUrl) {
+              const sandboxRes = await callCloudSandbox(sandboxUrl, modalKey, { action: "analyze_image", url, session_id: agentSessionId });
+              const safeRes = sandboxRes.length > 2000 ? sandboxRes.slice(0, 2000) + "\n... [đã tóm lược]" : sandboxRes;
+              observation = `[Kết quả OCR Hình ảnh]:\n${safeRes}`;
+              await sendEvent({ type: "step", text: `✅ Cloud Sandbox: Đã hoàn tất bóc tách OCR hình ảnh` });
+            } else {
+              observation = `[OCR Hình ảnh]: Chưa cấu hình SANDBOX_BASE_URL.`;
+            }
+            workingMessages.push({ role: "assistant", content: rawContent });
+            workingMessages.push({ role: "user", content: `[Hệ thống Observation]:\n${observation}` });
             continue;
           } else if (toolType === "network_recon" || toolType === "network") {
             const target = String(toolCall.target || toolCall.domain || toolCall.url || "");

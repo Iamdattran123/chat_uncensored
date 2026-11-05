@@ -23,7 +23,65 @@ function getEmailFromSession(){
 }
 let currentMode = 'chat'; // 'chat' | 'agent'
 let session = null, conversations = [], currentId = null, busy = false;
+let pendingImage = null; // Base64 data URL của ảnh người dùng đính kèm
 const SESSION_KEY = 'modal-chat-auth-session';
+
+// Xử lý nén và đọc hình ảnh từ file hoặc clipboard/drag-drop
+function setPendingImage(dataUrl){
+  pendingImage = dataUrl;
+  const previewBox = $('#imagePreviewContainer');
+  const previewImg = $('#imagePreviewImg');
+  const attachBtn = $('#attachBtn');
+  if (previewBox && previewImg) {
+    previewImg.src = dataUrl;
+    previewBox.style.display = 'flex';
+  }
+  if (attachBtn) attachBtn.classList.add('active');
+}
+
+function clearPendingImage(){
+  pendingImage = null;
+  const previewBox = $('#imagePreviewContainer');
+  const previewImg = $('#imagePreviewImg');
+  const attachBtn = $('#attachBtn');
+  const fileInput = $('#imageInput');
+  if (previewBox) previewBox.style.display = 'none';
+  if (previewImg) previewImg.src = '';
+  if (attachBtn) attachBtn.classList.remove('active');
+  if (fileInput) fileInput.value = '';
+}
+
+function handleImageFile(file){
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const rawDataUrl = e.target.result;
+    // Nén nhẹ ảnh qua Canvas để tối ưu băng thông và tăng tốc độ OCR Tesseract
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 1600;
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const optimizedUrl = canvas.toDataURL('image/jpeg', 0.88);
+      setPendingImage(optimizedUrl);
+    };
+    img.src = rawDataUrl;
+  };
+  reader.readAsDataURL(file);
+}
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function formatted(text){
@@ -177,7 +235,7 @@ function scrollBottom(){
   box.scrollTop = box.scrollHeight;
 }
 
-function addMessage(role, text, typing=false, reasoningText='', steps=[], sources=[]){
+function addMessage(role, text, typing=false, reasoningText='', steps=[], sources=[], image=''){
   const row = document.createElement('div');
   row.className = `message ${role}`;
   if(role === 'assistant'){
@@ -258,7 +316,23 @@ function addMessage(role, text, typing=false, reasoningText='', steps=[], source
 
     result = { bubble, answer, reasoningPanel, reasoningSummary, reasoningBody, activityBox, activityList, sourcesBox };
   } else {
-    bubble.innerHTML = formatted(text);
+    // Render tin nhắn của người dùng kèm ảnh đính kèm (nếu có)
+    let contentHtml = '';
+    if (image) {
+      contentHtml += `<div class="chat-attached-image"><img src="${esc(image)}" alt="Ảnh đính kèm" title="Bấm để mở ảnh lớn"></div>`;
+    }
+    contentHtml += formatted(text);
+    bubble.innerHTML = contentHtml;
+    // Hỗ trợ click vào ảnh để xem kích thước đầy đủ trong tab mới
+    const imgEl = bubble.querySelector('.chat-attached-image img');
+    if (imgEl && image) {
+      imgEl.onclick = () => {
+        const win = window.open();
+        if (win) {
+          win.document.write(`<body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${image}" style="max-width:100%;max-height:100%;object-fit:contain;"></body>`);
+        }
+      };
+    }
   }
 
   row.appendChild(bubble);
@@ -276,7 +350,7 @@ function renderMessages(){
       const legacy = splitLegacyThink(m.content);
       addMessage(m.role, legacy.content, false, m.reasoning || legacy.reasoning, m.steps || [], m.sources || []);
     } else {
-      addMessage(m.role, m.content);
+      addMessage(m.role, m.content, false, '', [], [], m.image || '');
     }
   });
   scrollBottom();
@@ -532,10 +606,15 @@ $('#logoutBtn').onclick = () => {
 };
 $('#clearHistory').onclick = clearAllHistory;
 
-// XỬ LÝ GỬI TIN NHẮN (Hỗ trợ cả Chat thường và Agent Loop)
+// XỬ LÝ GỬI TIN NHẮN (Hỗ trợ cả Chat thường, Agent Loop và Đính kèm Hình ảnh)
 async function send(text){
   text = (text || '').trim();
-  if(!text || busy || !session) return;
+  const imgToSend = pendingImage;
+  if((!text && !imgToSend) || busy || !session) return;
+
+  if(!text && imgToSend){
+    text = 'Hãy đọc hiểu và phân tích chi tiết hình ảnh này.';
+  }
 
   if(!currentId){
     const c = {
@@ -549,9 +628,14 @@ async function send(text){
   }
 
   const c = active();
-  c.messages.push({ role: 'user', content: text });
+  const userMsg = { role: 'user', content: text };
+  if(imgToSend){
+    userMsg.image = imgToSend;
+  }
+  c.messages.push(userMsg);
   welcome.style.display = 'none';
-  addMessage('user', text);
+  addMessage('user', text, false, '', [], [], imgToSend);
+  clearPendingImage();
 
   const reply = addMessage('assistant', '', true);
   input.value = '';
@@ -732,6 +816,61 @@ async function send(text){
 // Bắt sự kiện chuyển tab
 if (tabChat) tabChat.onclick = () => switchMode('chat');
 if (tabAgent) tabAgent.onclick = () => switchMode('agent');
+
+// Bắt sự kiện tải ảnh (Nút đính kèm 📎, File Input, Xóa preview)
+const attachBtn = $('#attachBtn');
+const imageInput = $('#imageInput');
+const removeImageBtn = $('#removeImageBtn');
+if (attachBtn && imageInput) {
+  attachBtn.onclick = () => imageInput.click();
+  imageInput.onchange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleImageFile(e.target.files[0]);
+    }
+  };
+}
+if (removeImageBtn) {
+  removeImageBtn.onclick = clearPendingImage;
+}
+
+// Bắt sự kiện Dán ảnh từ Clipboard (Ctrl + V)
+window.addEventListener('paste', (e) => {
+  const items = (e.clipboardData || window.clipboardData)?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile();
+      if (file) {
+        handleImageFile(file);
+        e.preventDefault();
+        break;
+      }
+    }
+  }
+});
+
+// Bắt sự kiện Kéo thả ảnh vào khung nhập liệu (Drag & Drop)
+const composerForm = $('#chatForm');
+if (composerForm) {
+  ['dragenter', 'dragover'].forEach(ev => {
+    composerForm.addEventListener(ev, (e) => {
+      e.preventDefault();
+      composerForm.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    composerForm.addEventListener(ev, (e) => {
+      e.preventDefault();
+      composerForm.classList.remove('drag-over');
+    });
+  });
+  composerForm.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files[0] && dt.files[0].type.startsWith('image/')) {
+      handleImageFile(dt.files[0]);
+    }
+  });
+}
 
 $('#chatForm').addEventListener('submit', e => {
   e.preventDefault();

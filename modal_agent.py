@@ -35,6 +35,8 @@ sandbox_image = (
         "file", "binutils", "strace", "lsof", "procps", "default-jre-headless",
         # Bộ điều tra Network, DNS, SSL & Reconnaissance ("Tai mắt mạng"):
         "dnsutils", "whois", "net-tools", "iputils-ping", "nmap",
+        # Bộ công cụ Nhận dạng Ký tự Quang học & Thị giác (OCR Engine đa ngôn ngữ):
+        "tesseract-ocr", "tesseract-ocr-eng", "tesseract-ocr-vie",
     )
     .pip_install(
         # Binary Exploitation & Reversing:
@@ -43,8 +45,8 @@ sandbox_image = (
         "sqlmap", "wafw00f",
         # Networking & Scrape:
         "requests", "httpx", "urllib3", "scapy", "beautifulsoup4", "lxml",
-        # Cryptography, Math & Image:
-        "cryptography", "sympy", "numpy", "pillow",
+        # Cryptography, Math, Image & Vision OCR:
+        "cryptography", "sympy", "numpy", "pillow", "pytesseract",
         # Trình duyệt tự hành mô phỏng người dùng thật (Headless Browser / User Emulation):
         "playwright",
         # Server endpoint:
@@ -125,7 +127,70 @@ def sandbox(payload: Dict[str, Any]):
         os.makedirs(workdir, exist_ok=True)
 
     try:
-        if action == "inspect":
+        if action == "analyze_image":
+            # Phân tích hình ảnh, đọc hiểu OCR đa ngôn ngữ (Tiếng Việt + Tiếng Anh)
+            # Hỗ trợ cả Base64 string lẫn URL ảnh từ web
+            raw_base64 = payload.get("image_base64") or payload.get("image") or ""
+            image_url = payload.get("url") or payload.get("image_url") or ""
+
+            img_bytes = None
+            if raw_base64:
+                import base64
+                if "," in raw_base64:
+                    raw_base64 = raw_base64.split(",", 1)[1]
+                try:
+                    img_bytes = base64.b64decode(raw_base64)
+                except Exception as b64_err:
+                    return {"error": f"Base64 không hợp lệ: {str(b64_err)}"}
+            elif image_url:
+                import requests
+                try:
+                    r = requests.get(image_url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+                    if r.status_code == 200:
+                        img_bytes = r.content
+                    else:
+                        return {"error": f"Không thể tải ảnh từ URL: HTTP {r.status_code}"}
+                except Exception as fetch_err:
+                    return {"error": f"Lỗi tải ảnh: {str(fetch_err)}"}
+
+            if not img_bytes:
+                return {"error": "Thiếu dữ liệu hình ảnh (cần image_base64 hoặc url)"}
+
+            from PIL import Image
+            import pytesseract
+            import io
+
+            try:
+                img = Image.open(io.BytesIO(img_bytes))
+                width, height = img.size
+                img_format = img.format or "UNKNOWN"
+
+                # Chuyển đổi sang RGB nếu đang ở RGBA/P để tránh lỗi OCR
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+
+                # Bóc tách text bằng Tesseract đa ngôn ngữ Tiếng Việt + Tiếng Anh (vie+eng)
+                extracted_text = ""
+                try:
+                    extracted_text = pytesseract.image_to_string(img, lang="vie+eng").strip()
+                except Exception:
+                    # Fallback sang tiếng Anh nếu language pack vie gặp vấn đề
+                    extracted_text = pytesseract.image_to_string(img, lang="eng").strip()
+
+                has_text = bool(extracted_text)
+                return {
+                    "success": True,
+                    "format": img_format,
+                    "width": width,
+                    "height": height,
+                    "has_text": has_text,
+                    "extracted_text": extracted_text[:4000] if extracted_text else "(Không phát hiện văn bản rõ ràng trong ảnh)",
+                    "summary": f"Hình ảnh định dạng {img_format}, kích thước {width}x{height}px."
+                }
+            except Exception as ocr_err:
+                return {"error": f"Lỗi xử lý hình ảnh OCR: {str(ocr_err)}"}
+
+        elif action == "inspect":
             target_url = payload.get("url", "").strip()
             if not target_url:
                 return {"error": "Thiếu tham số url"}
