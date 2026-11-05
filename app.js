@@ -585,11 +585,16 @@ async function send(text){
     });
 
     if(!r.ok){
-      let err = 'Yêu cầu thất bại.';
+      let err = `Yêu cầu thất bại (HTTP ${r.status}).`;
       try {
-        const j = await r.json();
-        err = j.error || j.message || err;
-        if(j.detail) err += ' — ' + j.detail;
+        const text = await r.text();
+        try {
+          const j = JSON.parse(text);
+          err = j.error || j.message || err;
+          if(j.detail) err += ' — ' + j.detail;
+        } catch {
+          if (text && text.length < 250) err = text.trim();
+        }
       } catch {}
       throw new Error(err);
     }
@@ -611,13 +616,18 @@ async function send(text){
           const data = line.slice(5).trim();
           if(data === '[DONE]') continue;
 
+          let j = null;
           try {
-            const j = JSON.parse(data);
+            j = JSON.parse(data);
+          } catch {
+            continue;
+          }
 
-            if (j.type === 'error') {
-              throw new Error(j.message || 'Lỗi xử lý Agent.');
-            }
+          if (j.type === 'error') {
+            throw new Error(j.message || 'Lỗi xử lý Agent.');
+          }
 
+          try {
             // 1. Phản hồi kiểu Agent: step, delta, sources
             if (j.type === 'step') {
               steps.push(j.text);

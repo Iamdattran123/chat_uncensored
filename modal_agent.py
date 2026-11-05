@@ -58,7 +58,7 @@ sandbox_image = (
     timeout=3600,
     min_containers=0,
     max_containers=1,
-    scaledown_window=90,
+    scaledown_window=1800,
 )
 @modal.web_server(8000, startup_timeout=900)
 def serve():
@@ -86,7 +86,7 @@ def serve():
     timeout=300,
     min_containers=0,
     max_containers=3,
-    scaledown_window=30,
+    scaledown_window=600,
 )
 @modal.fastapi_endpoint(method="POST")
 def sandbox(payload: Dict[str, Any]):
