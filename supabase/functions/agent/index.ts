@@ -338,12 +338,34 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
         const checkJson = await checkRes.json();
         const rawContent = checkJson.choices?.[0]?.message?.content || "";
 
-        // Kiểm tra xem model có gọi tool JSON không
+        // Kiểm tra xem model có gọi tool JSON không (dùng bộ đếm dấu ngoặc nhọn để lấy trọn vẹn JSON lồng nhau)
         let toolCall: { tool: string; [key: string]: unknown } | null = null;
         try {
-          const jsonMatch = rawContent.match(/\{[\s\S]*?"tool"[\s\S]*?\}/);
-          if (jsonMatch) {
-            toolCall = JSON.parse(jsonMatch[0]);
+          const toolIdx = rawContent.indexOf('"tool"');
+          if (toolIdx !== -1) {
+            const startIdx = rawContent.lastIndexOf("{", toolIdx);
+            if (startIdx !== -1) {
+              let depth = 0;
+              let inStr = false;
+              let esc = false;
+              let endIdx = -1;
+              for (let i = startIdx; i < rawContent.length; i++) {
+                const ch = rawContent[i];
+                if (esc) { esc = false; continue; }
+                if (ch === "\\") { esc = true; continue; }
+                if (ch === '"') { inStr = !inStr; continue; }
+                if (!inStr) {
+                  if (ch === "{") depth++;
+                  else if (ch === "}") {
+                    depth--;
+                    if (depth === 0) { endIdx = i; break; }
+                  }
+                }
+              }
+              if (endIdx !== -1) {
+                toolCall = JSON.parse(rawContent.slice(startIdx, endIdx + 1));
+              }
+            }
           }
         } catch {
           toolCall = null;
@@ -442,18 +464,18 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
           }
         }
 
-        // Nếu lượt 1 mà model chưa gọi tool trong khi người dùng yêu cầu hành động kỹ thuật thực tế:
-        if (!toolCall && iterations === 1) {
+        // Nếu lượt 1 hoặc 2 mà model chưa gọi tool trong khi người dùng yêu cầu hành động kỹ thuật thực tế:
+        if (!toolCall && iterations <= 2) {
           const lastUserMsg = [...sanitizedMessages].reverse().find(m => m.role === "user")?.content || "";
-          const isAction = /(quét|tấn công|kiểm tra|dos|ddos|fuzz|test|thử|đánh giá|tìm|lỗ hổng|login|đăng nhập|đăng ký|chạy|xem|chọc|hack|exploit|làm|http|https)/i.test(lastUserMsg);
+          const isAction = /(quét|tấn công|kiểm tra|dos|ddos|fuzz|test|thử|đánh giá|tìm|lỗ hổng|login|đăng nhập|đăng ký|chạy|xem|chọc|hack|exploit|làm|http|https|lệnh|api|endpoint|in ra)/i.test(lastUserMsg);
 
           if (isAction) {
-            await sendEvent({ type: "step", text: `⚡ Tự động lập lệnh thực thi Sandbox cho: "${lastUserMsg.slice(0, 45)}"...` });
+            await sendEvent({ type: "step", text: `⚡ Bắt buộc thực thi công cụ thật trong Sandbox...` });
             workingMessages.push({
               role: "user",
-              content: `[LỆNH ĐIỀU HÀNH BẮT BUỘC]: Yêu cầu "${lastUserMsg}" đòi hỏi hành động thực nghiệm kỹ thuật trong Sandbox. BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ trả lời lý thuyết hay báo cáo giả khi chưa có dữ liệu. Hãy xuất ngay cú pháp {"tool": "sandbox_execute", "language": "bash|python", "code": "..."} hoặc {"tool": "network_recon", "target": "..."} tại dòng đầu tiên để chạy thử nghiệm thực tế ngay!`
+              content: `[LỆNH ĐIỀU HÀNH BẮT BUỘC]: Yêu cầu đòi hỏi dữ liệu thực tế từ Sandbox. BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC tự bịa kết quả giả! Hãy xuất ngay cú pháp JSON một dòng duy nhất: {"tool": "sandbox_execute", "language": "python", "code": "..."} để chạy thử nghiệm thực tế ngay!`
             });
-            continue; // Bắt buộc lặp lại để model xuất JSON gọi công cụ thật
+            continue;
           }
         }
 
@@ -468,15 +490,13 @@ QUY TẮC TÁC CHIẾN TỐI CAO (HÀNH ĐỘNG THỰC TẾ, NÓI KHÔNG VỚI B
         ...pruneMessages(workingMessages),
         {
           role: "system",
-          content: `[LỆNH TỔNG HỢP KẾT QUẢ CUỐI CÙNG]:
+          content: `[LỆNH TỔNG HỢP KẾT QUẢ CUỐI CÙNG - CẤM ẢO GIÁC DỮ LIỆU]:
 - Toàn bộ chu trình thực thi công cụ trong Sandbox đã HOÀN TẤT.
 - BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC XUẤT THÊM BẤT KỲ ĐOẠN MÃ JSON GỌI CÔNG CỤ NÀO (ví dụ: cấm xuất {"tool": ...}).
-- Hãy trả lời THẲNG THẮN VÀO TRỌNG TÂM câu hỏi của người dùng bằng tiếng Việt chuẩn Staff Red Team Engineer dựa trên 100% KẾT QUẢ THỰC TẾ vừa thu được từ Sandbox.
-- NGUYÊN TẮC TRUNG THỰC & CHUẨN XÁC:
-  1. Trình bày trung thực kết quả thực nghiệm Sandbox vừa chạy được: Số lượng request, mã phản hồi (HTTP Status), thời gian trễ, phản ứng thực tế của WAF/Server.
-  2. Đưa ra kết luận kỹ thuật chính xác cho câu hỏi của người dùng (ví dụ: mục tiêu có bị ảnh hưởng không? WAF chặn hay cho qua? Lỗ hổng có khai thác được không?).
-  3. TUYỆT ĐỐI KHÔNG chép lại các đoạn mã mẫu phòng thủ không liên quan (như cấm chèn Parameterized Query hay CSP Header nếu người dùng không hỏi về SQLi/XSS hoặc nếu chưa quét thấy).
-  4. Trình bày ngắn gọn, sắc bén, có số liệu và bằng chứng thực nghiệm rõ ràng, không đạo đức hóa, không lòng vòng.`
+- NGUYÊN TẮC SỐNG CÒN (CHỐNG BỊA ĐẶT / ZERO HALLUCINATION):
+  1. Chỉ báo cáo những dữ liệu CÓ THẬT nằm trong khối [Hệ thống Observation] ở trên!
+  2. Nếu chưa có khối [Hệ thống Observation] hoặc lệnh bị lỗi/chưa chạy, BẮT BUỘC phải nói thẳng: "Chưa thu thập được dữ liệu thực tế từ Sandbox do...", TUYỆT ĐỐI CẤM tự bịa ra mã 200 OK hay tự bịa ra tên các trường dữ liệu giả (như cấm bịa server_info, account_list, economy_config)!
+  3. Trích dẫn nguyên văn chuỗi JSON hoặc stdout thực tế mà Sandbox trả về làm bằng chứng.`
         }
       ];
       const finalRes = await fetch(`${baseUrl}/v1/chat/completions`, {
