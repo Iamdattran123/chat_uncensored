@@ -45,6 +45,8 @@ sandbox_image = (
         "requests", "httpx", "urllib3", "scapy", "beautifulsoup4", "lxml",
         # Cryptography, Math & Image:
         "cryptography", "sympy", "numpy", "pillow",
+        # Trình duyệt tự hành mô phỏng người dùng thật (Headless Browser / User Emulation):
+        "playwright",
         # Server endpoint:
         "fastapi"
     )
@@ -55,6 +57,8 @@ sandbox_image = (
         "curl -sL https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_linux_amd64.tar.gz -o /tmp/ffuf.tar.gz && tar -xzf /tmp/ffuf.tar.gz -C /usr/local/bin/ ffuf && rm -f /tmp/ffuf.tar.gz && chmod +x /usr/local/bin/ffuf",
         # Tải từ điển SecLists chuẩn cho FFUF & Directory Fuzzing:
         "mkdir -p /opt/wordlists && curl -sL https://raw.githubusercontent.com/danielmiessler/SecLists/master/Discovery/Web-Content/common.txt -o /opt/wordlists/common.txt",
+        # Cài đặt Chromium Headless và thư viện hệ thống cho Playwright:
+        "playwright install --with-deps chromium",
     )
 )
 
