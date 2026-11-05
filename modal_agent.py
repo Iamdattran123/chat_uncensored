@@ -27,7 +27,7 @@ sandbox_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install(
         "git", "curl", "wget", "p7zip-full", "unzip",
-        "file", "binutils"
+        "file", "binutils", "default-jre-headless"
     )
     .pip_install(
         "pefile", "capstone", "pyelftools", "requests", "fastapi"
@@ -39,7 +39,7 @@ sandbox_image = (
 # =========================================================================
 @app.function(
     image=vllm_image,
-    gpu="A10G",  # 24GB VRAM (Hoặc đổi thành "L40S" nếu muốn bung 16K context)
+    gpu="L40S",  # 48GB VRAM Ada Lovelace - Tốc độ gấp đôi A10G, context 16K siêu mượt
     volumes={"/root/.cache/huggingface": model_volume},
     secrets=[modal.Secret.from_name("model-auth")],
     timeout=3600,
@@ -56,9 +56,9 @@ def serve():
         "--model", MODEL_ID,
         "--host", "0.0.0.0",
         "--port", "8000",
-        "--max-model-len", "8192",
+        "--max-model-len", "16384",
         "--gpu-memory-utilization", "0.95",
-        "--kv-cache-dtype", "fp8",
+        "--kv-cache-dtype", "auto",
         "--quantization", "awq_marlin",
         "--enforce-eager",
         "--trust-remote-code",
@@ -151,7 +151,7 @@ def sandbox(payload: Dict[str, Any]):
                     f.write(code)
                 res = subprocess.run(
                     ["python3", script_path],
-                    timeout=45,
+                    timeout=30,
                     capture_output=True,
                     text=True
                 )
@@ -164,7 +164,7 @@ def sandbox(payload: Dict[str, Any]):
                 res = subprocess.run(
                     code,
                     shell=True,
-                    timeout=45,
+                    timeout=30,
                     capture_output=True,
                     text=True,
                     cwd=workdir
@@ -180,7 +180,7 @@ def sandbox(payload: Dict[str, Any]):
         return {"error": f"Action không hợp lệ: {action}"}
 
     except subprocess.TimeoutExpired:
-        return {"error": "Lệnh thực thi vượt quá thời gian cho phép (Timeout 45s)"}
+        return {"error": "Lệnh thực thi vượt quá thời gian cho phép (Timeout 30s)"}
     except Exception as err:
         return {"error": f"Lỗi trong Sandbox: {str(err)}"}
     finally:

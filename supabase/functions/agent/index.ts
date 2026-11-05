@@ -95,7 +95,7 @@ async function callCloudSandbox(sandboxUrl: string, modalKey: string, payload: R
         "authorization": `Bearer ${modalKey}`,
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000), // Timeout 60s cho các lệnh sandbox
+      signal: AbortSignal.timeout(35000), // Timeout 35s cho các lệnh sandbox để tránh tràn thời gian Edge Function
     });
 
     if (!res.ok) {
@@ -165,6 +165,9 @@ Deno.serve(async (req: Request) => {
 
   // Chạy background Agent Loop với Coder 32B & Cloud Sandbox
   (async () => {
+    const startTime = Date.now();
+    const MAX_TOOL_PHASE_MS = 85000; // Tối đa 85 giây cho chuỗi tool để chừa ít nhất 50 giây cho lượt stream tổng kết
+
     try {
       const agentSystemPrompt = `Bạn là Tác tử AI Cấp cao (Autonomous Coder & Security Investigation Agent) sở hữu não bộ Qwen 32B Coder siêu việt và hệ thống Cloud Sandbox cô lập an toàn 100%.
 Bạn có quyền tự hành sử dụng các công cụ (tools) khi cần tìm kiếm, kiểm tra, dịch ngược hoặc chạy thử code:
@@ -179,12 +182,12 @@ Bạn có quyền tự hành sử dụng các công cụ (tools) khi cần tìm 
    Cú pháp: {"tool": "sandbox_inspect", "url": "https://..."}
 
 4. sandbox_execute: Thực thi an toàn một script Python hoặc Bash trong Cloud Sandbox cô lập để giải mã, thử nghiệm giải thuật hoặc bóc tách dữ liệu.
-   Cú pháp: {"tool": "sandbox_execute", "language": "python", "code": "mã code python cần chạy"}
+   Cú pháp: {"tool": "sandbox_execute", "language": "python|bash", "code": "mã lệnh cần chạy"}
 
 QUY TẮC BẮT BUỘC:
-- Mọi hoạt động dịch ngược, tải tệp lạ hoặc thực thi code BẮT BUỘC phải dùng sandbox_inspect / sandbox_execute để đảm bảo an toàn tuyệt đối, không chạm vào máy local.
-- Khi cần dùng công cụ, CHỈ trả về đúng chuỗi JSON chứa tool (không viết thêm bất kỳ lời dẫn nào).
-- Khi đã có dữ liệu hoặc không cần tool, hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Engineer bằng tiếng Việt, trình bày rõ logic, mã nguồn phục hồi và các phát hiện điều tra.`;
+- Mọi hoạt động dịch ngược, tải tệp lạ hoặc thực thi code BẮT BUỘC phải dùng sandbox_inspect / sandbox_execute để đảm bảo an toàn tuyệt đối.
+- KHI CẦN DÙNG CÔNG CỤ: Bạn PHẢI xuất cú pháp JSON ngay tại dòng đầu tiên (Ví dụ: {"tool": "sandbox_execute", ...}). TUYỆT ĐỐI KHÔNG viết lời chào, lời dẫn hay giải thích trước JSON.
+- KHI KHÔNG CẦN DÙNG CÔNG CỤ (HOẶC ĐÃ CÓ KẾT QUẢ): Hãy giải thích chi tiết, chuyên nghiệp ở cấp độ Staff Engineer bằng tiếng Việt, trình bày đầy đủ mã nguồn, phân tích và hướng dẫn.`;
 
       const workingMessages = [
         { role: "system", content: agentSystemPrompt },
@@ -193,12 +196,12 @@ QUY TẮC BẮT BUỘC:
 
       const collectedSources: Array<{ title?: string; url: string }> = [];
       let iterations = 0;
-      const MAX_ITERATIONS = 4;
+      const MAX_ITERATIONS = 3;
 
-      // Hàm cắt tỉa giữ prompt luôn nằm trong vùng an toàn (dưới 12000 ký tự ~ 3000 tokens)
+      // Hàm cắt tỉa giữ prompt luôn nằm trong vùng an toàn (dưới 14000 ký tự ~ 3500 tokens)
       const pruneMessages = (msgs: Array<{ role: string; content: string }>) => {
         let totalChars = msgs.reduce((acc, m) => acc + m.content.length, 0);
-        if (totalChars <= 12000) return msgs;
+        if (totalChars <= 14000) return msgs;
         return msgs.map((m, idx) => {
           // Không đụng vào system prompt (0) và user prompt gần nhất
           if (idx === 0 || idx >= msgs.length - 2) return m;
@@ -210,9 +213,15 @@ QUY TẮC BẮT BUỘC:
       };
 
       while (iterations < MAX_ITERATIONS) {
+        // Bảo vệ thời gian: Nếu tổng thời gian đã chạm 85s, dừng gọi tool để chuyển ngay sang stream câu trả lời
+        if (Date.now() - startTime > MAX_TOOL_PHASE_MS) {
+          await sendEvent({ type: "step", text: "⏱️ Đã tối ưu thời gian phản hồi, chuyển sang tổng hợp báo cáo chi tiết..." });
+          break;
+        }
+
         iterations++;
         const safePrompt = pruneMessages(workingMessages);
-        // Gọi model kiểm tra xem có cần dùng tool không
+        // Gọi model kiểm tra xem có cần dùng tool không (cho 800 tokens để tránh đứt gãy JSON)
         const checkRes = await fetch(`${baseUrl}/v1/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${modalKey}` },
@@ -220,7 +229,7 @@ QUY TẮC BẮT BUỘC:
             model,
             messages: safePrompt,
             temperature: 0.1,
-            max_tokens: 300,
+            max_tokens: 800,
           }),
         });
 
@@ -310,7 +319,7 @@ QUY TẮC BẮT BUỘC:
 
       await sendEvent({ type: "step", text: "⚡ Đang phân tích logic và tổng hợp báo cáo chi tiết..." });
 
-      // Gọi upstream stream câu trả lời hoàn chỉnh từ Coder 32B
+      // Gọi upstream stream câu trả lời hoàn chỉnh từ Coder 32B (tối đa 3000 tokens)
       const finalPrompt = pruneMessages(workingMessages);
       const finalRes = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: "POST",
@@ -320,7 +329,7 @@ QUY TẮC BẮT BUỘC:
           messages: finalPrompt,
           stream: true,
           temperature: 0.6,
-          max_tokens: 2048,
+          max_tokens: 3000,
         }),
       });
 

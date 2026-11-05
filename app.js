@@ -121,9 +121,10 @@ function switchMode(newMode){
     return;
   }
   currentMode = newMode;
+  try { localStorage.setItem('preferred_chat_mode', currentMode); } catch {}
   updateModeUI();
 
-  // Tìm cuộc hội thoại đầu tiên của mode này
+  // Tìm cuộc hội thoại gần nhất của mode này
   const modeConv = conversations.find(c => (c.chat_mode || c.mode || 'chat') === currentMode);
   currentId = modeConv ? modeConv.id : null;
   renderHistory();
@@ -134,16 +135,23 @@ function switchMode(newMode){
 function renderHistory(){
   historyEl.innerHTML = '';
   const clearBtn = $('#clearHistory');
-  const filtered = conversations.filter(c => (c.mode || 'chat') === currentMode);
-  clearBtn.hidden = false;
-  clearBtn.disabled = busy || !filtered.length;
+  const isAdmin = checkIsAdmin(getEmailFromSession());
 
-  filtered.forEach(c => {
+  // Chuẩn Claude & ChatGPT: Admin thấy toàn bộ lịch sử với nhãn phân biệt, không bị ẩn khi đổi tab/trình duyệt
+  const list = isAdmin ? conversations : conversations.filter(c => (c.chat_mode || c.mode || 'chat') === 'chat');
+  clearBtn.hidden = false;
+  clearBtn.disabled = busy || !list.length;
+
+  list.forEach(c => {
+    const isAgentConv = (c.mode === 'agent' || c.chat_mode === 'agent');
     const row = document.createElement('div');
     row.className = 'history-row';
     const b = document.createElement('button');
     b.className = 'history-item' + (c.id === currentId ? ' active' : '');
-    b.textContent = (c.mode === 'agent' ? '⚡ ' : '') + (c.title || 'Cuộc trò chuyện mới');
+
+    // Nhãn biểu tượng chuyên nghiệp: ⚡ Agent AI vs 💬 Trò chuyện thường
+    const icon = isAgentConv ? '⚡ ' : '💬 ';
+    b.textContent = icon + (c.title || 'Cuộc trò chuyện mới');
     b.title = b.textContent;
     b.onclick = () => openChat(c.id);
     row.appendChild(b);
@@ -279,6 +287,7 @@ function openChat(id){
   const c = conversations.find(x => x.id === id);
   if (c && c.mode && c.mode !== currentMode) {
     currentMode = c.mode;
+    try { localStorage.setItem('preferred_chat_mode', currentMode); } catch {}
     updateModeUI();
   }
   renderMessages();
@@ -323,8 +332,26 @@ async function loadConversations(){
     }) : []
   }));
 
-  const modeConv = conversations.find(c => (c.mode || 'chat') === currentMode);
-  currentId = modeConv ? modeConv.id : null;
+  const isAdmin = checkIsAdmin(getEmailFromSession());
+  if (conversations.length > 0) {
+    // 1. Nếu có lựa chọn mode lưu trong localStorage thì ưu tiên, không thì lấy theo cuộc trò chuyện mới nhất
+    let target = null;
+    const savedMode = localStorage.getItem('preferred_chat_mode');
+    if (savedMode && isAdmin) {
+      target = conversations.find(c => (c.mode || 'chat') === savedMode);
+    }
+    if (!target) {
+      target = conversations[0];
+    }
+    currentId = target ? target.id : null;
+    if (target && target.mode && isAdmin) {
+      currentMode = target.mode;
+      try { localStorage.setItem('preferred_chat_mode', currentMode); } catch {}
+      updateModeUI();
+    }
+  } else {
+    currentId = null;
+  }
   renderHistory();
   renderMessages();
 }
@@ -649,7 +676,7 @@ async function send(text){
       }
     }
 
-    if(!answer) throw new Error('Model chưa trả nội dung. Kiểm tra endpoint Modal hoặc quyền truy cập.');
+    if(!answer && !reasoning) throw new Error('Model chưa trả nội dung. Kiểm tra endpoint Modal hoặc quyền truy cập.');
 
     if(reply.reasoningPanel){
       if(reasoning){
@@ -662,21 +689,27 @@ async function send(text){
       }
     }
 
-    c.messages.push({
-      role: 'assistant',
-      content: answer,
-      ...(reasoning ? { reasoning } : {}),
-      ...(steps.length > 0 ? { steps } : {}),
-      ...(sources.length > 0 ? { sources } : {})
-    });
-    await persistConversation(c);
-
   } catch(err) {
-    reply.answer.innerHTML = `<span style="color:#e5a49d">${esc(err.message)}</span>`;
+    if(!answer && !reasoning){
+      reply.answer.innerHTML = `<span style="color:#e5a49d">${esc(err.message)}</span>`;
+    }
     if(err.message.includes('đăng nhập') || err.message.includes('Phiên')) {
       showAuth(err.message);
     }
   } finally {
+    // Chuẩn Claude/ChatGPT: Dù stream trọn vẹn hay gặp ngắt mạng/timeout giữa chừng,
+    // toàn bộ nội dung đã sinh ra đều được LƯU 100% vào Database Supabase, không bị mất lịch sử!
+    if(answer || reasoning){
+      const assistantMsg = {
+        role: 'assistant',
+        content: answer,
+        ...(reasoning ? { reasoning } : {}),
+        ...(steps.length > 0 ? { steps } : {}),
+        ...(sources.length > 0 ? { sources } : {})
+      };
+      c.messages.push(assistantMsg);
+      await persistConversation(c).catch(() => {});
+    }
     busy = false;
     $('#sendBtn').disabled = false;
     input.disabled = false;
