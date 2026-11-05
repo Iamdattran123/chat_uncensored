@@ -8,9 +8,9 @@ from typing import Optional, Dict, Any
 # Modal App dành riêng cho Agent AI (Coder 32B + Cloud Sandbox Cô Lập)
 app = modal.App("private-agent-suite")
 
-# 1. Model Coder 32B AWQ - Vua coding, dịch ngược & phân tích
+# 1. Model 32B Abliterated AWQ - Uncensored 100%, không rào cản đạo đức, vua coding & dịch ngược
 MODEL_ID = os.environ.get(
-    "AGENT_MODEL_ID", "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
+    "AGENT_MODEL_ID", "zae029/Qwen2.5-32B-Instruct-abliterated-AWQ"
 )
 
 # Volume lưu trữ cache weights của HuggingFace - Tải 1 lần, khởi động tức thì
