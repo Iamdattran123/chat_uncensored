@@ -104,7 +104,11 @@ Deno.serve(async (req) => {
   };
 
   try {
-    const targetUrl = modalBaseUrl.endsWith("/generate") ? modalBaseUrl : `${modalBaseUrl}/generate`;
+    // Xử lý endpoint Modal: nếu đã có '-generate' hoặc '/generate' thì giữ nguyên, ngược lại mới nối thêm
+    let targetUrl = modalBaseUrl;
+    if (!targetUrl.includes("-generate") && !targetUrl.endsWith("/generate")) {
+      targetUrl = `${targetUrl}/generate`;
+    }
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };

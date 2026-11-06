@@ -951,10 +951,14 @@ if (imageGenForm) {
 
       if (!res.ok) {
         let errMessage = `Lỗi tạo ảnh (${res.status})`;
-        try {
-          const errData = await res.json();
-          errMessage = errData.error || errMessage;
-        } catch {}
+        if (res.status === 546) {
+          errMessage = 'Hết thời gian chờ (Timeout 546): GPU Modal đang trong quá trình khởi động hoặc nạp model lần đầu. Hãy bấm "Tạo Hình Ảnh Ngay" thêm một lần nữa để kết nối lại GPU!';
+        } else {
+          try {
+            const errData = await res.json();
+            errMessage = errData.error || errMessage;
+          } catch {}
+        }
         throw new Error(errMessage);
       }
 

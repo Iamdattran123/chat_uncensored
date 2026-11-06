@@ -8,13 +8,25 @@ from PIL import Image
 from pydantic import BaseModel
 from typing import Optional
 
-# Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu (Hỗ trợ Text2Img & Image-to-Image Mẫu)
+# Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu
 app = modal.App("private-image-studio")
 
-# Volume lưu trữ weights model - Tải 1 lần trên Hugging Face, các lần sau khởi động tức thì
+# Volume lưu trữ weights model để nạp tức thì
 weights_volume = modal.Volume.from_name("image-weights-cache", create_if_missing=True)
 
-# Image môi trường PyTorch + Diffusers tối tân nhất
+MODEL_NAME = "SG161222/RealVisXL_V5.0"
+
+# Hàm tải trước model vào Image cache để KHÔNG BỊ COLD START TIMEOUT
+def download_models():
+    from huggingface_hub import snapshot_download
+    print(f"[Build] Đang tải sẵn weights model {MODEL_NAME} vào cache...")
+    snapshot_download(
+        repo_id=MODEL_NAME,
+        allow_patterns=["*.safetensors", "*.json", "*.txt"],
+        ignore_patterns=["*.bin", "*.onnx"]
+    )
+    print("[Build] Tải hoàn tất! Image đã sẵn sàng.")
+
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
@@ -27,8 +39,10 @@ image = (
         "protobuf",
         "fastapi[standard]>=0.115.0",
         "pillow>=10.4.0",
-        "invisible-watermark>=0.2.0"
+        "invisible-watermark>=0.2.0",
+        "huggingface_hub>=0.24.0"
     )
+    .run_function(download_models)
 )
 
 class GenerateRequest(BaseModel):
@@ -40,29 +54,28 @@ class GenerateRequest(BaseModel):
     guidance_scale: Optional[float] = 6.5
     seed: Optional[int] = -1
     model_id: Optional[str] = "SG161222/RealVisXL_V5.0"
-    init_image: Optional[str] = None  # Ảnh mẫu tham chiếu (Base64 data URL)
-    strength: Optional[float] = 0.65  # Độ bám ảnh mẫu / Mức độ biến đổi (0.1 -> 0.95)
+    init_image: Optional[str] = None
+    strength: Optional[float] = 0.65
 
 @app.cls(
     image=image,
-    gpu="L4",  # GPU Nvidia L4 24GB VRAM: Siêu tối ưu chi phí (~$0.80/h), render SDXL ~3s, Flux Schnell ~4s
+    gpu="A10G",  # Dùng A10G (24GB VRAM): Nguồn cung cực lớn trên Modal, không bao giờ bị nghẽn capacity chờ L4
     volumes={"/root/.cache/huggingface": weights_volume},
     secrets=[modal.Secret.from_name("model-auth")],
     timeout=600,
     min_containers=0,
     max_containers=1,
-    scaledown_window=120,  # 2 phút không có request tự động tắt GPU về 0 để tiết kiệm tối đa chi phí
+    scaledown_window=180,  # 3 phút không dùng tự scale về 0 để tiết kiệm chi phí
 )
 class ImageStudio:
     @modal.enter()
     def setup(self):
         from diffusers import AutopipelineForText2Image
         
-        default_model = os.environ.get("IMAGE_MODEL_ID", "SG161222/RealVisXL_V5.0")
+        default_model = os.environ.get("IMAGE_MODEL_ID", MODEL_NAME)
         self.current_model_id = default_model
-        print(f"[ImageStudio] Đang nạp model mặc định: {default_model}...")
+        print(f"[ImageStudio] Đang nạp pipeline model: {default_model}...")
 
-        # Nạp pipeline tự động cho SDXL hoặc Flux với torch.float16 tối ưu bộ nhớ
         self.pipe = AutopipelineForText2Image.from_pretrained(
             default_model,
             torch_dtype=torch.float16,
@@ -70,13 +83,12 @@ class ImageStudio:
             use_safetensors=True,
         )
         
-        # TẮT HOÀN TOÀN TẤT CẢ BỘ LỌC ĐẠO ĐỨC & SAFETY CHECKER (100% Uncensored)
+        # TẮT HOÀN TOÀN BỘ LỌC ĐẠO ĐỨC (100% Uncensored)
         if hasattr(self.pipe, "safety_checker"):
             self.pipe.safety_checker = None
         if hasattr(self.pipe, "requires_safety_checker"):
             self.pipe.requires_safety_checker = False
 
-        # Tối ưu hóa bộ nhớ và tốc độ
         self.pipe.to("cuda")
         if hasattr(self.pipe, "enable_vae_tiling"):
             self.pipe.enable_vae_tiling()
@@ -107,41 +119,34 @@ class ImageStudio:
     def generate(self, req: GenerateRequest):
         start_time = time.time()
         
-        # Kiểm tra và nạp đúng model người dùng chọn
-        model_id = req.model_id or "SG161222/RealVisXL_V5.0"
+        model_id = req.model_id or MODEL_NAME
         self.load_model_if_needed(model_id)
 
-        # Xử lý Seed
         if req.seed is None or req.seed < 0:
             seed = torch.randint(0, 2**32 - 1, (1,)).item()
         else:
             seed = int(req.seed)
         generator = torch.Generator(device="cuda").manual_seed(seed)
 
-        # Chuẩn hóa kích thước chia hết cho 8
         width = (req.width // 8) * 8
         height = (req.height // 8) * 8
         steps = max(4, min(req.num_inference_steps, 50))
         guidance = max(1.0, min(req.guidance_scale, 20.0))
 
-        # Nếu model là Flux Schnell: chỉ cần 4 steps và guidance 0.0
         if "schnell" in model_id.lower():
             steps = min(steps, 6)
             guidance = 0.0
 
-        # Kiểm tra xem có ảnh mẫu tham chiếu (Image-to-Image) hay không
         if req.init_image:
-            print("[ImageStudio] Phát hiện ảnh mẫu tham chiếu! Kích hoạt chế độ Image-to-Image / Face Guidance...")
+            print("[ImageStudio] Kích hoạt chế độ Image-to-Image theo ảnh mẫu...")
             from diffusers import AutoPipelineForImage2Image
 
-            # Chuyển đổi pipeline sang Image-to-Image tức thì mà không cần load lại weights
             img2img_pipe = AutoPipelineForImage2Image.from_pipe(self.pipe)
             if hasattr(img2img_pipe, "safety_checker"):
                 img2img_pipe.safety_checker = None
             if hasattr(img2img_pipe, "requires_safety_checker"):
                 img2img_pipe.requires_safety_checker = False
 
-            # Giải mã Base64 ảnh mẫu
             raw_base64 = req.init_image
             if "," in raw_base64:
                 raw_base64 = raw_base64.split(",", 1)[1]
@@ -149,8 +154,6 @@ class ImageStudio:
             ref_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             ref_image = ref_image.resize((width, height), Image.Resampling.LANCZOS)
 
-            # Mức độ biến đổi ảnh mẫu (strength: 0.1 -> 0.95)
-            # Thấp: giữ rất sát nét mặt/khung gốc. Cao: tự do sáng tạo nhiều hơn
             strength = max(0.15, min(req.strength if req.strength is not None else 0.65, 0.95))
 
             gen_kwargs = {
@@ -166,7 +169,6 @@ class ImageStudio:
 
             output = img2img_pipe(**gen_kwargs)
         else:
-            # Chế độ Text-to-Image thông thường
             gen_kwargs = {
                 "prompt": req.prompt,
                 "width": width,
@@ -182,7 +184,6 @@ class ImageStudio:
 
         image = output.images[0]
 
-        # Chuyển đổi ảnh sang Base64 PNG
         buffered = io.BytesIO()
         image.save(buffered, format="PNG", optimize=True)
         img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
