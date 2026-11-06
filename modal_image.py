@@ -4,10 +4,11 @@ import time
 import base64
 import torch
 import modal
+from PIL import Image
 from pydantic import BaseModel
 from typing import Optional
 
-# Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu
+# Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu (Hỗ trợ Text2Img & Image-to-Image Mẫu)
 app = modal.App("private-image-studio")
 
 # Volume lưu trữ weights model - Tải 1 lần trên Hugging Face, các lần sau khởi động tức thì
@@ -39,6 +40,8 @@ class GenerateRequest(BaseModel):
     guidance_scale: Optional[float] = 6.5
     seed: Optional[int] = -1
     model_id: Optional[str] = "SG161222/RealVisXL_V5.0"
+    init_image: Optional[str] = None  # Ảnh mẫu tham chiếu (Base64 data URL)
+    strength: Optional[float] = 0.65  # Độ bám ảnh mẫu / Mức độ biến đổi (0.1 -> 0.95)
 
 @app.cls(
     image=image,
@@ -53,7 +56,7 @@ class GenerateRequest(BaseModel):
 class ImageStudio:
     @modal.enter()
     def setup(self):
-        from diffusers import AutopipelineForText2Image, DPMSolverMultistepScheduler
+        from diffusers import AutopipelineForText2Image
         
         default_model = os.environ.get("IMAGE_MODEL_ID", "SG161222/RealVisXL_V5.0")
         self.current_model_id = default_model
@@ -121,26 +124,62 @@ class ImageStudio:
         steps = max(4, min(req.num_inference_steps, 50))
         guidance = max(1.0, min(req.guidance_scale, 20.0))
 
-        # Nếu model là Flux Schnell: chỉ cần 4 steps và guidance 0.0 - 1.0
+        # Nếu model là Flux Schnell: chỉ cần 4 steps và guidance 0.0
         if "schnell" in model_id.lower():
             steps = min(steps, 6)
             guidance = 0.0
 
-        gen_kwargs = {
-            "prompt": req.prompt,
-            "width": width,
-            "height": height,
-            "num_inference_steps": steps,
-            "guidance_scale": guidance,
-            "generator": generator,
-        }
-        
-        # Chỉ truyền negative_prompt nếu pipeline hỗ trợ
-        if "flux" not in model_id.lower() and req.negative_prompt:
-            gen_kwargs["negative_prompt"] = req.negative_prompt
+        # Kiểm tra xem có ảnh mẫu tham chiếu (Image-to-Image) hay không
+        if req.init_image:
+            print("[ImageStudio] Phát hiện ảnh mẫu tham chiếu! Kích hoạt chế độ Image-to-Image / Face Guidance...")
+            from diffusers import AutoPipelineForImage2Image
 
-        # Thực thi sinh ảnh
-        output = self.pipe(**gen_kwargs)
+            # Chuyển đổi pipeline sang Image-to-Image tức thì mà không cần load lại weights
+            img2img_pipe = AutoPipelineForImage2Image.from_pipe(self.pipe)
+            if hasattr(img2img_pipe, "safety_checker"):
+                img2img_pipe.safety_checker = None
+            if hasattr(img2img_pipe, "requires_safety_checker"):
+                img2img_pipe.requires_safety_checker = False
+
+            # Giải mã Base64 ảnh mẫu
+            raw_base64 = req.init_image
+            if "," in raw_base64:
+                raw_base64 = raw_base64.split(",", 1)[1]
+            img_bytes = base64.b64decode(raw_base64)
+            ref_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            ref_image = ref_image.resize((width, height), Image.Resampling.LANCZOS)
+
+            # Mức độ biến đổi ảnh mẫu (strength: 0.1 -> 0.95)
+            # Thấp: giữ rất sát nét mặt/khung gốc. Cao: tự do sáng tạo nhiều hơn
+            strength = max(0.15, min(req.strength if req.strength is not None else 0.65, 0.95))
+
+            gen_kwargs = {
+                "prompt": req.prompt,
+                "image": ref_image,
+                "strength": strength,
+                "num_inference_steps": steps,
+                "guidance_scale": guidance,
+                "generator": generator,
+            }
+            if "flux" not in model_id.lower() and req.negative_prompt:
+                gen_kwargs["negative_prompt"] = req.negative_prompt
+
+            output = img2img_pipe(**gen_kwargs)
+        else:
+            # Chế độ Text-to-Image thông thường
+            gen_kwargs = {
+                "prompt": req.prompt,
+                "width": width,
+                "height": height,
+                "num_inference_steps": steps,
+                "guidance_scale": guidance,
+                "generator": generator,
+            }
+            if "flux" not in model_id.lower() and req.negative_prompt:
+                gen_kwargs["negative_prompt"] = req.negative_prompt
+
+            output = self.pipe(**gen_kwargs)
+
         image = output.images[0]
 
         # Chuyển đổi ảnh sang Base64 PNG
@@ -161,6 +200,7 @@ class ImageStudio:
             "height": height,
             "steps": steps,
             "guidance_scale": guidance,
+            "has_reference": bool(req.init_image),
         }
 
     @modal.fastapi_endpoint(method="GET")

@@ -35,6 +35,58 @@ const RECENT_IMAGES_KEY = 'modal-studio-recent-images';
 let currentWidth = 1024;
 let currentHeight = 1024;
 let recentImages = [];
+let referenceImage = null; // Base64 của ảnh mẫu khuôn mặt/dáng người (Image-to-Image)
+
+// Quản lý Ảnh Mẫu Tham Chiếu (Reference Image / Face Guidance)
+function setReferenceImage(dataUrl){
+  referenceImage = dataUrl;
+  const dropzone = $('#refDropzone');
+  const previewWrap = $('#refPreviewWrap');
+  const previewImg = $('#refPreviewImg');
+  const clearLink = $('#clearRefBtn');
+  if (previewImg) previewImg.src = dataUrl;
+  if (dropzone) dropzone.style.display = 'none';
+  if (previewWrap) previewWrap.style.display = 'flex';
+  if (clearLink) clearLink.style.display = 'inline-block';
+}
+
+function clearReferenceImage(){
+  referenceImage = null;
+  const dropzone = $('#refDropzone');
+  const previewWrap = $('#refPreviewWrap');
+  const previewImg = $('#refPreviewImg');
+  const clearLink = $('#clearRefBtn');
+  const fileInput = $('#refImageInput');
+  if (previewImg) previewImg.src = '';
+  if (dropzone) dropzone.style.display = 'block';
+  if (previewWrap) previewWrap.style.display = 'none';
+  if (clearLink) clearLink.style.display = 'none';
+  if (fileInput) fileInput.value = '';
+}
+
+function handleRefImageFile(file){
+  if (!file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const raw = e.target.result;
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = 1344;
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+        else { w = Math.round((w * maxDim) / h); h = maxDim; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      setReferenceImage(canvas.toDataURL('image/jpeg', 0.92));
+    };
+    img.src = raw;
+  };
+  reader.readAsDataURL(file);
+}
 
 // =========================================================================
 // XỬ LÝ NÉN VÀ ĐỌC HÌNH ẢNH TRONG CHAT
@@ -668,6 +720,62 @@ if (cfgInput && cfgVal) {
   cfgInput.addEventListener('input', () => { cfgVal.textContent = cfgInput.value; });
 }
 
+// Bắt sự kiện tải và xử lý Ảnh mẫu tham chiếu
+const refDropzone = $('#refDropzone');
+const refImageInput = $('#refImageInput');
+const removeRefBtn = $('#removeRefBtn');
+const clearRefBtn = $('#clearRefBtn');
+const refStrength = $('#refStrength');
+const strengthVal = $('#strengthVal');
+const strengthDesc = $('#strengthDesc');
+
+if (refDropzone && refImageInput) {
+  refDropzone.onclick = () => refImageInput.click();
+  refImageInput.onchange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleRefImageFile(e.target.files[0]);
+    }
+  };
+
+  ['dragenter', 'dragover'].forEach(ev => {
+    refDropzone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      refDropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    refDropzone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      refDropzone.classList.remove('dragover');
+    });
+  });
+  refDropzone.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files[0] && dt.files[0].type.startsWith('image/')) {
+      handleRefImageFile(dt.files[0]);
+    }
+  });
+}
+
+if (removeRefBtn) removeRefBtn.onclick = clearReferenceImage;
+if (clearRefBtn) clearRefBtn.onclick = clearReferenceImage;
+
+if (refStrength && strengthVal) {
+  refStrength.addEventListener('input', () => {
+    const val = Number(refStrength.value);
+    strengthVal.textContent = Math.round(val * 100) + '%';
+    if (strengthDesc) {
+      if (val < 0.45) {
+        strengthDesc.textContent = 'Rất sát ảnh mẫu: Giữ tối đa đường nét khuôn mặt & bố cục';
+      } else if (val <= 0.70) {
+        strengthDesc.textContent = 'Chuẩn nhất: Giữ nét mặt & phong thái, đổi dáng và bối cảnh';
+      } else {
+        strengthDesc.textContent = 'Biến đổi mạnh: Lấy cảm hứng từ ảnh mẫu, sáng tạo tự do';
+      }
+    }
+  });
+}
+
 // Cập nhật giá trị khuyên dùng khi đổi model
 const modelSelectEl = $('#imgModelSelect');
 if (modelSelectEl) {
@@ -827,6 +935,8 @@ if (imageGenForm) {
         guidance_scale: Number($('#imgGuidance').value) || 6.5,
         seed: Number($('#imgSeed').value),
         model_id: $('#imgModelSelect').value,
+        init_image: referenceImage || null,
+        strength: referenceImage ? Number($('#refStrength')?.value || 0.65) : null,
       };
 
       const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/image`, {
@@ -926,7 +1036,11 @@ window.addEventListener('paste', (e) => {
     if (item.kind === 'file' && item.type.startsWith('image/')) {
       const file = item.getAsFile();
       if (file) {
-        handleImageFile(file);
+        if (currentMode === 'image') {
+          handleRefImageFile(file);
+        } else {
+          handleImageFile(file);
+        }
         e.preventDefault();
         break;
       }

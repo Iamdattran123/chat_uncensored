@@ -133,6 +133,47 @@
               </div>
             </div>
 
+            <!-- Ảnh mẫu tham chiếu (Image Reference / Face Guidance) -->
+            <div class="form-group">
+              <div class="ref-header">
+                <label>Ảnh mẫu tham chiếu <small class="text-muted">(Khuôn mặt, dáng người...)</small></label>
+                <button type="button" class="clear-ref-link" id="clearRefBtn" style="display:none;">Gỡ ảnh mẫu</button>
+              </div>
+              <input type="file" id="refImageInput" accept="image/png,image/jpeg,image/webp" style="display:none">
+              
+              <!-- Dropzone khi chưa có ảnh -->
+              <div class="ref-dropzone" id="refDropzone">
+                <div class="dropzone-inner">
+                  <span class="dropzone-icon">📷</span>
+                  <div class="dropzone-text">
+                    <strong>Tải ảnh khuôn mặt / ảnh mẫu lên</strong>
+                    <small>Bấm để chọn file, kéo thả hoặc dán <b>Ctrl+V</b></small>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Preview khi đã chọn ảnh mẫu -->
+              <div class="ref-preview-wrap" id="refPreviewWrap" style="display:none;">
+                <div class="ref-card">
+                  <img id="refPreviewImg" src="" alt="Ảnh mẫu">
+                  <div class="ref-info">
+                    <span class="ref-name">Đã nhận diện ảnh mẫu</span>
+                    <small class="ref-hint">AI sẽ giữ nét mặt & phong thái này để sáng tạo ảnh mới</small>
+                  </div>
+                  <button type="button" class="remove-ref-btn" id="removeRefBtn" title="Gỡ ảnh mẫu">×</button>
+                </div>
+
+                <!-- Slider độ bám ảnh mẫu -->
+                <div class="ref-strength-box">
+                  <div class="strength-labels">
+                    <span>Mức độ bám ảnh mẫu: <b id="strengthVal">65%</b></span>
+                    <small id="strengthDesc">Chuẩn nhất: Giữ nét mặt, tự do tạo dáng & bối cảnh mới</small>
+                  </div>
+                  <input type="range" id="refStrength" min="0.2" max="0.9" value="0.65" step="0.05">
+                </div>
+              </div>
+            </div>
+
             <!-- Prompt chính -->
             <div class="form-group">
               <label for="imgPrompt">Mô tả hình ảnh (Prompt)</label>

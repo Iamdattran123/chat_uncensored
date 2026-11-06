@@ -62,6 +62,34 @@
 .ratio-name{font-size:12px;font-weight:600}
 .ratio-dim{font-size:9px;opacity:.75}
 
+/* Ảnh Mẫu Tham Chiếu (Reference Image / Face Guidance) */
+.ref-header{display:flex;justify-content:space-between;align-items:center}
+.clear-ref-link{border:0;background:none;color:#f87171;font-size:11px;cursor:pointer;padding:0}
+.clear-ref-link:hover{text-decoration:underline}
+.ref-dropzone{border:1.5px dashed #4b4b56;border-radius:10px;padding:12px;background:#1e1e22;cursor:pointer;transition:all .18s ease;text-align:center}
+.ref-dropzone:hover,.ref-dropzone.dragover{border-color:#a855f7;background:#241f30}
+.dropzone-inner{display:flex;align-items:center;gap:12px;justify-content:center}
+.dropzone-icon{font-size:24px;color:#a855f7}
+.dropzone-text{text-align:left;display:flex;flex-direction:column;gap:2px}
+.dropzone-text strong{font-size:12px;color:#ececf2}
+.dropzone-text small{font-size:10px;color:#9b9ba6}
+
+.ref-preview-wrap{display:flex;flex-direction:column;gap:10px;background:#1c1c20;border:1px solid #3c3c45;border-radius:10px;padding:10px}
+.ref-card{display:flex;align-items:center;gap:12px;position:relative}
+.ref-card img{width:56px;height:56px;border-radius:8px;object-fit:cover;border:1px solid #4a4a55;background:#141416}
+.ref-info{flex:1;display:flex;flex-direction:column;gap:2px}
+.ref-name{font-size:12px;font-weight:600;color:#34d399}
+.ref-hint{font-size:10px;color:#9ca3af;line-height:1.4}
+.remove-ref-btn{width:24px;height:24px;border:0;border-radius:6px;background:#2f2f36;color:#e4e4e7;cursor:pointer;display:grid;place-items:center;font-size:14px;transition:background .15s ease}
+.remove-ref-btn:hover{background:#ef4444;color:#fff}
+
+.ref-strength-box{border-top:1px solid #2e2e36;padding-top:8px;display:flex;flex-direction:column;gap:5px}
+.strength-labels{display:flex;justify-content:space-between;align-items:center}
+.strength-labels span{font-size:11px;color:#d1d5db}
+.strength-labels span b{color:#a855f7}
+.strength-labels small{font-size:10px;color:#9ca3af}
+.ref-strength-box input[type="range"]{width:100%;accent-color:#a855f7;cursor:pointer}
+
 .studio-form textarea{width:100%;background:#29292e;border:1px solid #41414a;border-radius:9px;color:#ececf2;padding:10px 12px;font:inherit;font-size:13px;line-height:1.5;resize:vertical;outline:none}
 .studio-form textarea:focus{border-color:#8b5cf6}
 .studio-form textarea::placeholder{color:#787884}
