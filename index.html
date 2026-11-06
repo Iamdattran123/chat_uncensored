@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#202123">
-<title>Khung Chat — Local AI</title><link rel="stylesheet" href="./styles.css">
+<title>Khung Chat & Studio Tạo Ảnh — Local AI</title><link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 <div class="app">
@@ -11,7 +11,7 @@
     <button class="new-chat" id="newChat"><span class="plus">＋</span> Cuộc trò chuyện mới <span class="shortcut">⌘ K</span></button>
     <div class="history-heading"><div class="side-label">GẦN ĐÂY</div><button class="clear-history" id="clearHistory" title="Xóa toàn bộ lịch sử">Xóa hết</button></div><div class="history" id="history"></div>
     <div class="side-spacer"></div>
-    <div class="privacy-note"><span class="lock">♧</span><div><strong>Model riêng của bạn</strong><small>Inference chạy trên GPU Modal khi bạn gửi chat.</small></div></div>
+    <div class="privacy-note"><span class="lock">♧</span><div><strong>Model riêng của bạn</strong><small>Inference chạy trên GPU Modal khi bạn kích hoạt.</small></div></div>
     <div class="profile"><div class="avatar">U</div><div class="profile-copy"><strong id="profileEmail">Tài khoản</strong><small>Lịch sử riêng tư</small></div><button class="icon-btn" id="logoutBtn" title="Đăng xuất">⇥</button></div>
   </aside>
   <main class="main">
@@ -20,16 +20,16 @@
       <div class="model-select" id="modelSelect">
         <span class="model-name" id="modelName">Model của bạn</span>
         <span class="chevron">⌄</span>
-        <span class="model-pill">MODAL</span>
+        <span class="model-pill" id="modelPill">MODAL</span>
       </div>
       <div class="mode-switcher" id="modeSwitcher" style="display: none;">
         <button class="mode-tab active" id="tabChat" type="button" data-mode="chat">
           <span class="tab-icon">💬</span>
           <span>Trò chuyện</span>
         </button>
-        <button class="mode-tab" id="tabAgent" type="button" data-mode="agent">
-          <span class="tab-icon">⚡</span>
-          <span>Agent AI</span>
+        <button class="mode-tab" id="tabImage" type="button" data-mode="image">
+          <span class="tab-icon">🎨</span>
+          <span>Tạo Hình Ảnh</span>
           <span class="admin-badge">Admin</span>
         </button>
       </div>
@@ -38,6 +38,8 @@
         <button class="icon-btn" id="settingsBtn" title="Cấu hình endpoint">⚙</button>
       </div>
     </header>
+
+    <!-- SECTION 1: CHAT MODE -->
     <section class="conversation" id="conversation">
       <div class="welcome" id="welcome">
         <div class="welcome-chat-content" id="welcomeChat">
@@ -51,27 +53,10 @@
             <button class="suggestion" data-prompt="Đưa ra vài hướng tiếp cận sáng tạo cho vấn đề này: "><span class="suggestion-icon">✧</span><span><b>Khám phá ý tưởng</b><small>Mở rộng góc nhìn của bạn</small></span><span class="arrow">↗</span></button>
           </div>
         </div>
-        <div class="welcome-agent-content" id="welcomeAgent" style="display:none;">
-          <div class="welcome-symbol agent-symbol">⚡</div>
-          <h1>Tác tử Kỹ thuật & Sandbox Cô lập (Agent 32B)</h1>
-          <p>Trang bị não bộ Qwen 32B Coder đỉnh cao · Kết nối Cloud Sandbox gVisor độc lập để dịch ngược, điều tra file/game và chạy code an toàn tuyệt đối.</p>
-          <div class="agent-skills-bar">
-            <span class="skill-tag">⚡ Qwen 32B Coder</span>
-            <span class="skill-tag">🛡️ Cloud Sandbox gVisor</span>
-            <span class="skill-tag">🔍 Dịch ngược & Triage</span>
-            <span class="skill-tag">🌐 Internet Realtime</span>
-          </div>
-          <div class="suggestions">
-            <button class="suggestion" data-prompt="Kiểm tra độ an toàn, bóc tách cấu trúc và trích xuất strings của tệp tại link này vào Cloud Sandbox: "><span class="suggestion-icon">🛡️</span><span><b>Triage & Điều tra tệp</b><small>Tải vào sandbox phân tích an toàn</small></span><span class="arrow">↗</span></button>
-            <button class="suggestion" data-prompt="Phân tích mã nguồn, tìm hiểu luồng xử lý và dịch ngược logic của dự án này: "><span class="suggestion-icon">🔍</span><span><b>Dịch ngược & Phân tích logic</b><small>Đọc bytecode/script và phục hồi source</small></span><span class="arrow">↗</span></button>
-            <button class="suggestion" data-prompt="Viết một script tool hoàn chỉnh bằng Python và thực thi thử nghiệm an toàn trong sandbox."><span class="suggestion-icon">💻</span><span><b>Viết & Thử nghiệm Tool</b><small>Tự viết code và chạy test cloud</small></span><span class="arrow">↗</span></button>
-            <button class="suggestion" data-prompt="Tìm kiếm và tóm tắt những tin tức công nghệ AI nóng hổi nhất tuần này kèm nguồn tin."><span class="suggestion-icon">🌐</span><span><b>Nghiên cứu & Duyệt Web</b><small>Tìm kiếm realtime trên internet</small></span><span class="arrow">↗</span></button>
-          </div>
-        </div>
       </div>
       <div class="messages" id="messages"></div>
     </section>
-    <div class="composer-wrap">
+    <div class="composer-wrap" id="chatComposerWrap">
       <form class="composer" id="chatForm">
         <div class="image-preview-container" id="imagePreviewContainer" style="display:none;">
           <div class="preview-card">
@@ -93,9 +78,158 @@
       </form>
       <div class="disclaimer">Model có thể mắc lỗi. Hỗ trợ gửi ảnh chụp màn hình, mã code, log lỗi để AI đọc hiểu qua OCR.</div>
     </div>
+
+    <!-- SECTION 2: IMAGE GENERATION STUDIO (TẬP TRUNG TỐI ĐA VÀO TẠO ẢNH) -->
+    <section class="image-studio" id="imageStudio" style="display:none;">
+      <div class="studio-container">
+        <!-- Panel điều khiển bên trái -->
+        <div class="studio-sidebar">
+          <div class="studio-header">
+            <div class="studio-title">
+              <span class="studio-badge">UNCENSORED</span>
+              <h2>Studio Tạo Hình Ảnh</h2>
+            </div>
+            <p class="studio-desc">Sử dụng model hàng đầu không kiểm duyệt trên GPU riêng biệt. Mọi tư thế, phong cách và chi tiết đều được đáp ứng đầy đủ.</p>
+          </div>
+
+          <form id="imageGenForm" class="studio-form">
+            <!-- Chọn Model -->
+            <div class="form-group">
+              <label for="imgModelSelect">Model tạo ảnh</label>
+              <div class="select-wrap">
+                <select id="imgModelSelect">
+                  <option value="SG161222/RealVisXL_V5.0" selected>👑 RealVisXL V5.0 (Ảnh thật / Chân dung siêu nét / Uncensored)</option>
+                  <option value="AstraliteHeart/pony-diffusion-v6-xl">🔥 Pony Diffusion V6 XL (Vua Uncensored / Mọi tư thế / Anime & 2.5D)</option>
+                  <option value="black-forest-labs/FLUX.1-schnell">⚡ FLUX.1 [schnell] (Siêu tốc 4 steps / Ánh sáng chân thực)</option>
+                  <option value="black-forest-labs/FLUX.1-dev">💎 FLUX.1 [dev] (Chất lượng cao nhất / Bàn tay & chi tiết đỉnh cao)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Tỉ lệ khung hình (Aspect Ratio) -->
+            <div class="form-group">
+              <label>Tỉ lệ khung hình & Độ phân giải</label>
+              <div class="ratio-grid" id="ratioGrid">
+                <button type="button" class="ratio-btn active" data-w="1024" data-h="1024">
+                  <span class="ratio-box square"></span>
+                  <span class="ratio-name">1:1</span>
+                  <span class="ratio-dim">1024x1024</span>
+                </button>
+                <button type="button" class="ratio-btn" data-w="768" data-h="1344">
+                  <span class="ratio-box portrait"></span>
+                  <span class="ratio-name">9:16</span>
+                  <span class="ratio-dim">768x1344 (Dọc)</span>
+                </button>
+                <button type="button" class="ratio-btn" data-w="1344" data-h="768">
+                  <span class="ratio-box landscape"></span>
+                  <span class="ratio-name">16:9</span>
+                  <span class="ratio-dim">1344x768 (Ngang)</span>
+                </button>
+                <button type="button" class="ratio-btn" data-w="864" data-h="1152">
+                  <span class="ratio-box portrait-43"></span>
+                  <span class="ratio-name">3:4</span>
+                  <span class="ratio-dim">864x1152</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Prompt chính -->
+            <div class="form-group">
+              <label for="imgPrompt">Mô tả hình ảnh (Prompt)</label>
+              <textarea id="imgPrompt" rows="4" placeholder="Nhập mô tả chi tiết: nhân vật, trang phục, góc máy, ánh sáng, bối cảnh, tư thế... (Tiếng Anh hoặc Tiếng Việt)" required></textarea>
+            </div>
+
+            <!-- Negative Prompt -->
+            <div class="form-group">
+              <label for="imgNegativePrompt">Mô tả loại trừ (Negative Prompt) <small class="text-muted">(Tùy chọn)</small></label>
+              <textarea id="imgNegativePrompt" rows="2" placeholder="Những yếu tố muốn loại trừ: bad anatomy, deformed fingers, blurry, watermark...">ugly, deformed, disfigured, poor details, bad anatomy, bad fingers, blurry, watermark, signature, low quality</textarea>
+            </div>
+
+            <!-- Cấu hình nâng cao (Accordion) -->
+            <details class="advanced-settings">
+              <summary>Cài đặt nâng cao (Steps, CFG, Seed)</summary>
+              <div class="settings-grid">
+                <div class="setting-item">
+                  <label for="imgSteps">Steps lấy mẫu: <span id="stepsVal">25</span></label>
+                  <input type="range" id="imgSteps" min="4" max="45" value="25" step="1">
+                </div>
+                <div class="setting-item">
+                  <label for="imgGuidance">Độ bám prompt (CFG): <span id="cfgVal">6.5</span></label>
+                  <input type="range" id="imgGuidance" min="1.0" max="15.0" value="6.5" step="0.5">
+                </div>
+                <div class="setting-item full-width">
+                  <label for="imgSeed">Seed (-1 là ngẫu nhiên)</label>
+                  <input type="number" id="imgSeed" value="-1" placeholder="-1">
+                </div>
+              </div>
+            </details>
+
+            <!-- Nút Tạo Ảnh -->
+            <button type="submit" class="generate-btn" id="generateImgBtn">
+              <span class="btn-icon">⚡</span>
+              <span class="btn-text">Tạo Hình Ảnh Ngay</span>
+              <span class="btn-spinner" style="display:none;"></span>
+            </button>
+          </form>
+        </div>
+
+        <!-- Khung hiển thị kết quả bên phải -->
+        <div class="studio-canvas">
+          <div class="canvas-viewport" id="canvasViewport">
+            <!-- Trạng thái trống ban đầu -->
+            <div class="viewport-placeholder" id="viewportPlaceholder">
+              <div class="placeholder-icon">🎨</div>
+              <h3>Chưa có ảnh nào được tạo</h3>
+              <p>Nhập prompt mô tả bên trái và bấm <b>Tạo Hình Ảnh Ngay</b> để bắt đầu render trực tiếp trên GPU.</p>
+            </div>
+
+            <!-- Trạng thái đang render -->
+            <div class="viewport-loading" id="viewportLoading" style="display:none;">
+              <div class="spinner-pulse"></div>
+              <h3 id="loadingStatusText">Đang kích hoạt GPU & Lấy mẫu Diffusion...</h3>
+              <p>Thời gian ước tính: 3s - 15s. Cold start lần đầu có thể mất thêm giây lát.</p>
+              <div class="timer-badge" id="elapsedTimer">0.0s</div>
+            </div>
+
+            <!-- Kết quả ảnh chính -->
+            <div class="viewport-result" id="viewportResult" style="display:none;">
+              <div class="result-image-box">
+                <img id="mainResultImg" src="" alt="Ảnh AI đã tạo">
+                <div class="result-overlay">
+                  <button type="button" class="overlay-btn" id="openFullBtn" title="Xem kích thước gốc">🔍 Phóng to</button>
+                  <button type="button" class="overlay-btn primary" id="downloadImgBtn" title="Tải ảnh gốc về máy">⬇ Tải về (PNG)</button>
+                </div>
+              </div>
+              <div class="result-meta" id="resultMeta">
+                <div class="meta-row"><span class="meta-label">Model:</span> <span id="metaModel">-</span></div>
+                <div class="meta-row"><span class="meta-label">Kích thước:</span> <span id="metaDimensions">-</span></div>
+                <div class="meta-row"><span class="meta-label">Thời gian render:</span> <span id="metaElapsed">-</span></div>
+                <div class="meta-row"><span class="meta-label">Seed:</span> <span id="metaSeed">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Lịch sử ảnh đã tạo (Recent Grid) -->
+          <div class="recent-gallery">
+            <div class="recent-header">
+              <h4>Ảnh vừa tạo trong phiên</h4>
+              <button type="button" class="clear-recent-btn" id="clearRecentBtn" title="Xóa lịch sử ảnh">Xóa danh sách</button>
+            </div>
+            <div class="gallery-grid" id="galleryGrid">
+              <!-- Render thumbnail dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 </div>
-<div class="auth-overlay" id="authOverlay"><section class="auth-card"><div class="welcome-symbol">✳</div><h1>Đăng nhập</h1><p>Lịch sử chat được lưu riêng theo tài khoản của bạn.</p><form id="loginForm"><label>Email<input id="emailInput" type="email" autocomplete="username" required placeholder="you@example.com"></label><label>Mật khẩu<input id="passwordInput" type="password" autocomplete="current-password" required minlength="8" placeholder="••••••••"></label><button class="done-btn" type="submit" id="loginBtn">Đăng nhập</button><div class="auth-error" id="authError"></div></form><small>Tài khoản được tạo riêng bởi quản trị viên.</small></section></div>
-<div class="overlay" id="overlay"><section class="modal"><button class="modal-x" id="closeModal">×</button><div class="modal-icon">⌘</div><h2>Kết nối model trên Modal</h2><p class="modal-lead">Thông tin model được giữ ở Supabase Edge Function. Khoá Modal không nằm trong trình duyệt.</p><div class="config-state"><span class="state-indicator"></span><span id="syncLabel">Đăng nhập để đồng bộ lịch sử riêng.</span></div><div class="code-box"><div><span>Giao diện</span><code>GitHub Pages</code></div><div><span>Đăng nhập & lịch sử</span><code>Supabase Auth + Postgres</code></div><div><span>Model</span><code>Modal GPU, tự scale về 0</code></div></div><p class="modal-foot">Xem <b>README.md</b> để cài đặt. Tài khoản Supabase sẽ có lịch sử chat riêng.</p><button class="done-btn" id="doneBtn">Đã hiểu</button></section></div>
+
+<!-- Modal Đăng Nhập -->
+<div class="auth-overlay" id="authOverlay"><section class="auth-card"><div class="welcome-symbol">✳</div><h1>Đăng nhập</h1><p>Lịch sử và quyền truy cập được lưu theo tài khoản của bạn.</p><form id="loginForm"><label>Email<input id="emailInput" type="email" autocomplete="username" required placeholder="you@example.com"></label><label>Mật khẩu<input id="passwordInput" type="password" autocomplete="current-password" required minlength="8" placeholder="••••••••"></label><button class="done-btn" type="submit" id="loginBtn">Đăng nhập</button><div class="auth-error" id="authError"></div></form><small>Tài khoản được tạo riêng bởi quản trị viên.</small></section></div>
+
+<!-- Modal Thông Tin Cấu Hình -->
+<div class="overlay" id="overlay"><section class="modal"><button class="modal-x" id="closeModal">×</button><div class="modal-icon">⌘</div><h2>Cấu hình Kết nối AI</h2><p class="modal-lead">Inference được phân luồng qua Supabase Edge Functions. Token Modal bảo mật tuyệt đối ở máy chủ.</p><div class="config-state"><span class="state-indicator"></span><span id="syncLabel">Đăng nhập để đồng bộ lịch sử riêng.</span></div><div class="code-box"><div><span>Trò chuyện</span><code>Supabase Edge Function: /chat</code></div><div><span>Tạo ảnh Uncensored</span><code>Supabase Edge Function: /image (Độc quyền datviphero@)</code></div><div><span>GPU Inference</span><code>Modal Serverless GPU (Scale-to-zero)</code></div></div><p class="modal-foot">Xem <b>README.md</b> để cập nhật cấu hình secrets.</p><button class="done-btn" id="doneBtn">Đã hiểu</button></section></div>
+
 <script src="./config.js"></script><script src="./app.js"></script>
 </body></html>

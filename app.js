@@ -1,7 +1,9 @@
 const $ = (s) => document.querySelector(s);
 const welcome = $('#welcome'), messagesEl = $('#messages'), input = $('#prompt'), historyEl = $('#history');
-const welcomeChat = $('#welcomeChat'), welcomeAgent = $('#welcomeAgent');
-const tabChat = $('#tabChat'), tabAgent = $('#tabAgent');
+const welcomeChat = $('#welcomeChat');
+const tabChat = $('#tabChat'), tabImage = $('#tabImage');
+const conversationSection = $('#conversation'), chatComposerWrap = $('#chatComposerWrap');
+const imageStudio = $('#imageStudio');
 const cfg = window.APP_CONFIG || {};
 
 const ADMIN_EMAIL = 'datviphero@gmail.com';
@@ -10,6 +12,7 @@ function checkIsAdmin(email){
   const e = String(email).trim().toLowerCase();
   return e === 'datviphero@gmail.com' || e === 'datviphero@mail.com' || e.startsWith('datviphero@');
 }
+
 function getEmailFromSession(){
   if (session?.user?.email) return session.user.email;
   if (session?.access_token) {
@@ -21,12 +24,21 @@ function getEmailFromSession(){
   }
   return '';
 }
-let currentMode = 'chat'; // 'chat' | 'agent'
-let session = null, conversations = [], currentId = null, busy = false;
-let pendingImage = null; // Base64 data URL của ảnh người dùng đính kèm
-const SESSION_KEY = 'modal-chat-auth-session';
 
-// Xử lý nén và đọc hình ảnh từ file hoặc clipboard/drag-drop
+let currentMode = 'chat'; // 'chat' | 'image'
+let session = null, conversations = [], currentId = null, busy = false;
+let pendingImage = null; // Base64 data URL của ảnh người dùng đính kèm trong chat
+const SESSION_KEY = 'modal-chat-auth-session';
+const RECENT_IMAGES_KEY = 'modal-studio-recent-images';
+
+// Quản lý kích thước ảnh được chọn
+let currentWidth = 1024;
+let currentHeight = 1024;
+let recentImages = [];
+
+// =========================================================================
+// XỬ LÝ NÉN VÀ ĐỌC HÌNH ẢNH TRONG CHAT
+// =========================================================================
 function setPendingImage(dataUrl){
   pendingImage = dataUrl;
   const previewBox = $('#imagePreviewContainer');
@@ -56,7 +68,6 @@ function handleImageFile(file){
   const reader = new FileReader();
   reader.onload = (e) => {
     const rawDataUrl = e.target.result;
-    // Nén nhẹ ảnh qua Canvas để tối ưu băng thông và tăng tốc độ OCR Tesseract
     const img = new Image();
     img.onload = () => {
       const maxDim = 1600;
@@ -145,71 +156,65 @@ async function api(path, options={}){
 }
 
 function active(){
-  return conversations.find(c => c.id === currentId && (c.mode || 'chat') === currentMode);
+  return conversations.find(c => c.id === currentId);
 }
 
+// =========================================================================
+// CHUYỂN ĐỔI CHẾ ĐỘ: CHAT vs TẠO HÌNH ẢNH
+// =========================================================================
 function updateModeUI(){
-  const isAgent = currentMode === 'agent';
-  if (tabChat) tabChat.classList.toggle('active', !isAgent);
-  if (tabAgent) tabAgent.classList.toggle('active', isAgent);
+  const isImg = currentMode === 'image';
+  if (tabChat) tabChat.classList.toggle('active', !isImg);
+  if (tabImage) tabImage.classList.toggle('active', isImg);
 
-  if (welcomeChat && welcomeAgent) {
-    welcomeChat.style.display = isAgent ? 'none' : '';
-    welcomeAgent.style.display = isAgent ? '' : 'none';
-  }
+  const modelPill = $('#modelPill');
+  const modelName = $('#modelName');
 
-  const hintEl = $('.composer-hint span:last-child');
-  const dotEl = $('.tiny-dot');
-  if (isAgent) {
-    if (hintEl) hintEl.textContent = '⚡ Agent Online: Kết nối Internet & Tools sẵn sàng';
-    if (dotEl) dotEl.style.background = '#eab308';
-    input.placeholder = 'Hỏi Agent để tự động tìm kiếm web, đọc tài liệu và phân tích...';
+  if (isImg) {
+    if (conversationSection) conversationSection.style.display = 'none';
+    if (chatComposerWrap) chatComposerWrap.style.display = 'none';
+    if (imageStudio) imageStudio.style.display = 'flex';
+    if (modelPill) modelPill.textContent = 'IMAGE GPU';
+    if (modelName) modelName.textContent = 'Studio Tạo Ảnh (Uncensored)';
   } else {
-    if (hintEl) hintEl.textContent = 'Model chạy qua endpoint riêng';
-    if (dotEl) dotEl.style.background = '#76bd98';
-    input.placeholder = 'Nhắn tin với model của bạn...';
+    if (conversationSection) conversationSection.style.display = '';
+    if (chatComposerWrap) chatComposerWrap.style.display = '';
+    if (imageStudio) imageStudio.style.display = 'none';
+    if (modelPill) modelPill.textContent = 'MODAL';
+    if (modelName) modelName.textContent = 'Model của bạn';
   }
 }
 
 function switchMode(newMode){
   if (busy || currentMode === newMode) return;
   const currentEmail = getEmailFromSession();
-  if (newMode === 'agent' && !checkIsAdmin(currentEmail)) {
-    window.alert('Tính năng Agent chỉ dành riêng cho quản trị viên.');
+  if (newMode === 'image' && !checkIsAdmin(currentEmail)) {
+    window.alert('Tính năng Tạo Ảnh chỉ dành riêng cho tài khoản datviphero@gmail.com.');
     return;
   }
   currentMode = newMode;
-  try { localStorage.setItem('preferred_chat_mode', currentMode); } catch {}
+  try { localStorage.setItem('preferred_mode', currentMode); } catch {}
   updateModeUI();
 
-  // Tìm cuộc hội thoại gần nhất của mode này
-  const modeConv = conversations.find(c => (c.chat_mode || c.mode || 'chat') === currentMode);
-  currentId = modeConv ? modeConv.id : null;
-  renderHistory();
-  renderMessages();
-  input.focus();
+  if (currentMode === 'chat') {
+    renderHistory();
+    renderMessages();
+    input.focus();
+  }
 }
 
 function renderHistory(){
   historyEl.innerHTML = '';
   const clearBtn = $('#clearHistory');
-  const isAdmin = checkIsAdmin(getEmailFromSession());
-
-  // Chuẩn Claude & ChatGPT: Admin thấy toàn bộ lịch sử với nhãn phân biệt, không bị ẩn khi đổi tab/trình duyệt
-  const list = isAdmin ? conversations : conversations.filter(c => (c.chat_mode || c.mode || 'chat') === 'chat');
   clearBtn.hidden = false;
-  clearBtn.disabled = busy || !list.length;
+  clearBtn.disabled = busy || !conversations.length;
 
-  list.forEach(c => {
-    const isAgentConv = (c.mode === 'agent' || c.chat_mode === 'agent');
+  conversations.forEach(c => {
     const row = document.createElement('div');
     row.className = 'history-row';
     const b = document.createElement('button');
     b.className = 'history-item' + (c.id === currentId ? ' active' : '');
-
-    // Nhãn biểu tượng chuyên nghiệp: ⚡ Agent AI vs 💬 Trò chuyện thường
-    const icon = isAgentConv ? '⚡ ' : '💬 ';
-    b.textContent = icon + (c.title || 'Cuộc trò chuyện mới');
+    b.textContent = '💬 ' + (c.title || 'Cuộc trò chuyện mới');
     b.title = b.textContent;
     b.onclick = () => openChat(c.id);
     row.appendChild(b);
@@ -241,259 +246,147 @@ function addMessage(role, text, typing=false, reasoningText='', steps=[], source
   if(role === 'assistant'){
     const av = document.createElement('div');
     av.className = 'msg-avatar';
-    av.textContent = currentMode === 'agent' ? '⚡' : '✳';
-    if (currentMode === 'agent') {
-      av.style.background = '#fbbf24';
-      av.style.color = '#18181b';
-    }
+    av.textContent = '✳';
     row.appendChild(av);
   }
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   let result = bubble;
 
-  if(role === 'assistant'){
-    // 1. Agent Activity Panel (hiện các bước search/read realtime)
-    let activityBox = null, activityList = null;
-    if (currentMode === 'agent' || steps.length > 0) {
-      activityBox = document.createElement('div');
-      activityBox.className = 'agent-activity';
-      activityBox.hidden = !(typing || steps.length > 0);
-      activityBox.innerHTML = '<div class="activity-header"><span>⚙</span> Hoạt động của Agent</div>';
-      activityList = document.createElement('div');
-      activityList.className = 'activity-list';
-      steps.forEach(s => {
-        const item = document.createElement('div');
-        item.className = 'activity-item';
-        item.textContent = s;
-        activityList.appendChild(item);
-      });
-      activityBox.appendChild(activityList);
-      bubble.appendChild(activityBox);
-    }
-
-    // 2. Reasoning Details
-    let reasoningPanel = null, reasoningSummary = null, reasoningBody = null;
-    if(typing || reasoningText){
-      reasoningPanel = document.createElement('details');
-      reasoningPanel.className = 'reasoning-panel';
-      reasoningPanel.open = Boolean(typing);
-      reasoningSummary = document.createElement('summary');
-      reasoningSummary.textContent = typing ? 'Đang suy luận…' : 'Đã suy luận · bấm để xem';
-      reasoningBody = document.createElement('div');
-      reasoningBody.className = 'reasoning-body';
-      reasoningBody.innerHTML = formatted(reasoningText);
-      reasoningPanel.append(reasoningSummary, reasoningBody);
-      bubble.appendChild(reasoningPanel);
-    }
-
-    // 3. Main Answer Body
-    const answer = document.createElement('div');
-    answer.className = 'assistant-answer';
-    answer.innerHTML = typing ? '<span class="typing">Đang chờ xử lý…</span>' : formatted(text);
-    bubble.appendChild(answer);
-
-    // 4. Sources Panel
-    let sourcesBox = null, sourcesList = null;
-    if (sources && sources.length > 0) {
-      sourcesBox = document.createElement('div');
-      sourcesBox.className = 'sources-card';
-      sourcesBox.innerHTML = '<div class="sources-title">🔗 Nguồn tham khảo</div>';
-      sourcesList = document.createElement('div');
-      sourcesList.className = 'sources-list';
-      sources.forEach(src => {
-        const a = document.createElement('a');
-        a.className = 'source-link';
-        a.href = src.url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.textContent = '🌐 ' + (src.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 32));
-        sourcesList.appendChild(a);
-      });
-      sourcesBox.appendChild(sourcesList);
-      bubble.appendChild(sourcesBox);
-    }
-
-    result = { bubble, answer, reasoningPanel, reasoningSummary, reasoningBody, activityBox, activityList, sourcesBox };
-  } else {
-    // Render tin nhắn của người dùng kèm ảnh đính kèm (nếu có)
-    let contentHtml = '';
-    if (image) {
-      contentHtml += `<div class="chat-attached-image"><img src="${esc(image)}" alt="Ảnh đính kèm" title="Bấm để mở ảnh lớn"></div>`;
-    }
-    contentHtml += formatted(text);
-    bubble.innerHTML = contentHtml;
-    // Hỗ trợ click vào ảnh để xem kích thước đầy đủ trong tab mới
-    const imgEl = bubble.querySelector('.chat-attached-image img');
-    if (imgEl && image) {
-      imgEl.onclick = () => {
-        const win = window.open();
-        if (win) {
-          win.document.write(`<body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${image}" style="max-width:100%;max-height:100%;object-fit:contain;"></body>`);
-        }
-      };
-    }
+  if(image){
+    const imgContainer = document.createElement('div');
+    imgContainer.className = 'chat-attached-image';
+    const img = document.createElement('img');
+    img.src = image;
+    img.alt = 'Ảnh đính kèm';
+    img.onclick = () => window.open(image, '_blank');
+    imgContainer.appendChild(img);
+    bubble.appendChild(imgContainer);
   }
+
+  let reasoningPanel = null, reasoningSummary = null, reasoningBody = null;
+  if(role === 'assistant'){
+    reasoningPanel = document.createElement('details');
+    reasoningPanel.className = 'think-panel';
+    reasoningSummary = document.createElement('summary');
+    reasoningSummary.className = 'think-summary';
+    reasoningSummary.textContent = reasoningText ? 'Đã suy luận · bấm để xem' : 'Đang suy luận…';
+    reasoningBody = document.createElement('div');
+    reasoningBody.className = 'think-body';
+    reasoningBody.innerHTML = formatted(reasoningText);
+    reasoningPanel.appendChild(reasoningSummary);
+    reasoningPanel.appendChild(reasoningBody);
+    reasoningPanel.hidden = !reasoningText && !typing;
+    bubble.appendChild(reasoningPanel);
+  }
+
+  const answer = document.createElement('div');
+  answer.className = 'answer';
+  answer.innerHTML = typing ? '<span class="typing">Đang suy luận…</span>' : formatted(text);
+  bubble.appendChild(answer);
 
   row.appendChild(bubble);
   messagesEl.appendChild(row);
   scrollBottom();
-  return result;
+  return { row, bubble, reasoningPanel, reasoningSummary, reasoningBody, answer };
 }
 
 function renderMessages(){
   messagesEl.innerHTML = '';
   const c = active();
-  welcome.style.display = c?.messages?.length ? 'none' : '';
-  (c?.messages || []).forEach(m => {
-    if(m.role === 'assistant'){
-      const legacy = splitLegacyThink(m.content);
-      addMessage(m.role, legacy.content, false, m.reasoning || legacy.reasoning, m.steps || [], m.sources || []);
-    } else {
-      addMessage(m.role, m.content, false, '', [], [], m.image || '');
-    }
-  });
-  scrollBottom();
-}
-
-function openChat(id){
-  currentId = id;
-  const c = conversations.find(x => x.id === id);
-  if (c && c.mode && c.mode !== currentMode) {
-    currentMode = c.mode;
-    try { localStorage.setItem('preferred_chat_mode', currentMode); } catch {}
-    updateModeUI();
+  if(!c || !c.messages || !c.messages.length){
+    welcome.style.display = 'block';
+    return;
   }
-  renderMessages();
-  renderHistory();
-  $('#sidebar').classList.remove('open');
-}
-
-function newChat(){
-  currentId = null;
-  messagesEl.innerHTML = '';
-  welcome.style.display = '';
-  input.value = '';
-  input.focus();
-  renderHistory();
-  $('#sidebar').classList.remove('open');
+  welcome.style.display = 'none';
+  c.messages.forEach(m => {
+    let reasoning = m.reasoning || '';
+    let content = m.content || '';
+    if(!reasoning && m.role === 'assistant'){
+      const parsed = splitLegacyThink(content);
+      reasoning = parsed.reasoning;
+      content = parsed.content;
+    }
+    addMessage(m.role, content, false, reasoning, m.steps || [], m.sources || [], m.image || '');
+  });
 }
 
 async function loadConversations(){
-  let rows = [];
   try {
-    // Tránh aggregate keyword 'mode' của PostgreSQL bằng cách dùng 'chat_mode'
-    rows = await api('/rest/v1/conversations?select=id,title,messages,chat_mode,updated_at&order=updated_at.desc');
-  } catch (err) {
-    // Fallback nếu database chưa chạy script migration chat_mode
-    rows = await api('/rest/v1/conversations?select=id,title,messages,updated_at&order=updated_at.desc');
+    const data = await api('/rest/v1/conversations?select=id,title,messages,created_at,updated_at&order=updated_at.desc');
+    conversations = (data || []).map(row => ({
+      id: row.id,
+      title: row.title,
+      messages: Array.isArray(row.messages) ? row.messages : []
+    }));
+    if(!currentId && conversations.length) currentId = conversations[0].id;
+    renderHistory();
+    renderMessages();
+  } catch(err) {
+    console.error('Lỗi tải lịch sử:', err);
+    conversations = [];
+    renderHistory();
+    renderMessages();
   }
-  conversations = (rows || []).map(r => ({
-    ...r,
-    mode: r.chat_mode || r.mode || 'chat',
-    messages: Array.isArray(r.messages) ? r.messages.map(m => {
-      if(m.role === 'assistant'){
-        const legacy = splitLegacyThink(m.content);
-        return {
-          ...m,
-          content: legacy.content,
-          reasoning: m.reasoning || legacy.reasoning,
-          steps: m.steps || [],
-          sources: m.sources || []
-        };
-      }
-      return m;
-    }) : []
-  }));
-
-  const isAdmin = checkIsAdmin(getEmailFromSession());
-  if (conversations.length > 0) {
-    // 1. Nếu có lựa chọn mode lưu trong localStorage thì ưu tiên, không thì lấy theo cuộc trò chuyện mới nhất
-    let target = null;
-    const savedMode = localStorage.getItem('preferred_chat_mode');
-    if (savedMode && isAdmin) {
-      target = conversations.find(c => (c.mode || 'chat') === savedMode);
-    }
-    if (!target) {
-      target = conversations[0];
-    }
-    currentId = target ? target.id : null;
-    if (target && target.mode && isAdmin) {
-      currentMode = target.mode;
-      try { localStorage.setItem('preferred_chat_mode', currentMode); } catch {}
-      updateModeUI();
-    }
-  } else {
-    currentId = null;
-  }
-  renderHistory();
-  renderMessages();
 }
 
 async function persistConversation(c){
-  const payload = {
-    id: c.id,
-    title: c.title,
-    messages: c.messages,
-    chat_mode: c.mode || 'chat'
-  };
-  try {
-    await api('/rest/v1/conversations?on_conflict=id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(payload)
-    });
-  } catch (err) {
-    // Fallback nếu database chưa có cột chat_mode
-    delete payload.chat_mode;
-    await api('/rest/v1/conversations?on_conflict=id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(payload)
-    });
+  await api(`/rest/v1/conversations?id=eq.${c.id}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      title: c.title,
+      messages: c.messages,
+      updated_at: new Date().toISOString()
+    })
+  });
+}
+
+function newChat(){
+  if(busy) return;
+  if(currentMode === 'image'){
+    switchMode('chat');
   }
+  currentId = null;
+  renderHistory();
+  renderMessages();
+  input.value = '';
+  input.focus();
+}
+
+function openChat(id){
+  if(busy || currentId === id) return;
+  if(currentMode === 'image'){
+    switchMode('chat');
+  }
+  currentId = id;
+  renderHistory();
+  renderMessages();
+  input.focus();
 }
 
 async function deleteConversation(id){
   if(busy) return;
-  const c = conversations.find(x => x.id === id);
-  if(!c) return;
-  if(!window.confirm(`Xóa cuộc trò chuyện “${c.title || 'Cuộc trò chuyện mới'}”? Thao tác này không thể hoàn tác.`)) return;
   try {
-    await api(`/rest/v1/conversations?id=eq.${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' }
-    });
-    conversations = conversations.filter(x => x.id !== id);
-    if(currentId === id) {
-      const modeConv = conversations.find(x => (x.mode || 'chat') === currentMode);
-      currentId = modeConv ? modeConv.id : null;
+    await api(`/rest/v1/conversations?id=eq.${id}`, { method: 'DELETE' });
+    conversations = conversations.filter(c => c.id !== id);
+    if(currentId === id){
+      currentId = conversations.length ? conversations[0].id : null;
     }
     renderHistory();
     renderMessages();
   } catch(err) {
-    window.alert(`Không xóa được lịch sử: ${err.message}`);
+    window.alert(`Không xóa được cuộc trò chuyện: ${err.message}`);
   }
 }
 
 async function clearAllHistory(){
   if(busy || !conversations.length) return;
-  if(!window.confirm(`Xóa toàn bộ lịch sử (${currentMode === 'agent' ? 'Agent' : 'Chat'}) của tài khoản này? Thao tác không thể hoàn tác.`)) return;
+  if(!window.confirm('Xóa toàn bộ lịch sử trò chuyện của tài khoản này? Thao tác không thể hoàn tác.')) return;
   try {
-    const userId = session?.user?.id;
-    if(!userId) throw new Error('Không xác định được tài khoản hiện tại.');
-    try {
-      await api(`/rest/v1/conversations?user_id=eq.${encodeURIComponent(userId)}&chat_mode=eq.${encodeURIComponent(currentMode)}`, {
-        method: 'DELETE',
-        headers: { Prefer: 'return=minimal' }
-      });
-    } catch {
-      await api(`/rest/v1/conversations?user_id=eq.${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-        headers: { Prefer: 'return=minimal' }
-      });
-    }
-    conversations = conversations.filter(c => (c.mode || 'chat') !== currentMode);
+    const ids = conversations.map(c => c.id);
+    await api(`/rest/v1/conversations?id=in.(${ids.join(',')})`, { method: 'DELETE' });
+    conversations = [];
     currentId = null;
     renderHistory();
     renderMessages();
@@ -550,34 +443,34 @@ async function bootUser(){
     $('#profileEmail').textContent = userEmail || 'Tài khoản';
     hideAuth();
 
-    // BẢO MẬT GIAO DIỆN: Chỉ admin (datviphero@...) mới thấy tab Agent AI và Mode Switcher
+    // BẢO MẬT: Chỉ tài khoản datviphero@gmail.com mới thấy Tab Tạo Ảnh & Mode Switcher
     const isAdmin = checkIsAdmin(userEmail);
-    
     const modeSwitcher = $('#modeSwitcher');
     const modelSelect = $('#modelSelect');
-    const btnAgent = $('#tabAgent');
+    const btnImage = $('#tabImage');
 
     if (isAdmin) {
       if (modeSwitcher) modeSwitcher.style.display = 'flex';
       if (modelSelect) modelSelect.style.display = 'none';
-      if (btnAgent) {
-        btnAgent.hidden = false;
-        btnAgent.style.display = 'flex';
+      if (btnImage) {
+        btnImage.hidden = false;
+        btnImage.style.display = 'flex';
       }
     } else {
       if (modeSwitcher) modeSwitcher.style.display = 'none';
       if (modelSelect) modelSelect.style.display = 'flex';
-      if (btnAgent) {
-        btnAgent.hidden = true;
-        btnAgent.style.display = 'none';
+      if (btnImage) {
+        btnImage.hidden = true;
+        btnImage.style.display = 'none';
       }
       currentMode = 'chat';
     }
     updateModeUI();
 
     await loadConversations();
+    loadRecentImages();
     $('#status').className = 'status ok';
-    $('#status span').textContent = 'Lịch sử đã đồng bộ';
+    $('#status span').textContent = 'Sẵn sàng';
   } catch(err) {
     session = null;
     saveSession();
@@ -594,9 +487,9 @@ $('#logoutBtn').onclick = () => {
   const modelSelect = $('#modelSelect');
   if (modeSwitcher) modeSwitcher.style.display = 'none';
   if (modelSelect) modelSelect.style.display = 'flex';
-  if (tabAgent) {
-    tabAgent.hidden = true;
-    tabAgent.style.display = 'none';
+  if (tabImage) {
+    tabImage.hidden = true;
+    tabImage.style.display = 'none';
   }
   currentMode = 'chat';
   updateModeUI();
@@ -606,7 +499,9 @@ $('#logoutBtn').onclick = () => {
 };
 $('#clearHistory').onclick = clearAllHistory;
 
-// XỬ LÝ GỬI TIN NHẮN (Hỗ trợ cả Chat thường, Agent Loop và Đính kèm Hình ảnh)
+// =========================================================================
+// XỬ LÝ CHAT THƯỜNG
+// =========================================================================
 async function send(text){
   text = (text || '').trim();
   const imgToSend = pendingImage;
@@ -620,8 +515,7 @@ async function send(text){
     const c = {
       id: crypto.randomUUID(),
       title: text.length > 42 ? text.slice(0, 42) + '…' : text,
-      messages: [],
-      mode: currentMode
+      messages: []
     };
     conversations.unshift(c);
     currentId = c.id;
@@ -646,19 +540,12 @@ async function send(text){
   renderHistory();
 
   let reasoning = '', answer = '';
-  const steps = [];
-  let sources = [];
 
   try {
     await persistConversation(c);
     const token = await accessToken();
     
-    // Phân luồng endpoint: Agent -> /functions/v1/agent, Chat -> /functions/v1/chat
-    const endpoint = currentMode === 'agent'
-      ? `${cfg.SUPABASE_URL}/functions/v1/agent`
-      : `${cfg.SUPABASE_URL}/functions/v1/chat`;
-
-    const r = await fetch(endpoint, {
+    const r = await fetch(`${cfg.SUPABASE_URL}/functions/v1/chat`, {
       method: 'POST',
       headers: {
         apikey: cfg.SUPABASE_ANON_KEY,
@@ -671,14 +558,9 @@ async function send(text){
     if(!r.ok){
       let err = `Yêu cầu thất bại (HTTP ${r.status}).`;
       try {
-        const text = await r.text();
-        try {
-          const j = JSON.parse(text);
-          err = j.error || j.message || err;
-          if(j.detail) err += ' — ' + j.detail;
-        } catch {
-          if (text && text.length < 250) err = text.trim();
-        }
+        const textErr = await r.text();
+        const j = JSON.parse(textErr);
+        err = j.error || j.message || err;
       } catch {}
       throw new Error(err);
     }
@@ -701,76 +583,26 @@ async function send(text){
           if(data === '[DONE]') continue;
 
           let j = null;
-          try {
-            j = JSON.parse(data);
-          } catch {
-            continue;
+          try { j = JSON.parse(data); } catch { continue; }
+
+          if (j.choices) {
+            const delta = j.choices?.[0]?.delta || {};
+            reasoning += delta.reasoning || delta.reasoning_content || '';
+            answer += delta.content || '';
           }
 
-          if (j.type === 'error') {
-            throw new Error(j.message || 'Lỗi xử lý Agent.');
+          if(reply.reasoningPanel && reasoning){
+            reply.reasoningPanel.hidden = false;
+            reply.reasoningSummary.textContent = 'Đang suy luận…';
+            reply.reasoningBody.innerHTML = formatted(reasoning);
           }
-
-          try {
-            // 1. Phản hồi kiểu Agent: step, delta, sources
-            if (j.type === 'step') {
-              steps.push(j.text);
-              if (reply.activityBox && reply.activityList) {
-                reply.activityBox.hidden = false;
-                const it = document.createElement('div');
-                it.className = 'activity-item';
-                it.textContent = j.text;
-                reply.activityList.appendChild(it);
-              }
-              scrollBottom();
-              continue;
-            }
-            if (j.type === 'sources') {
-              sources = j.sources || [];
-              if (sources.length > 0 && reply.bubble) {
-                const sCard = document.createElement('div');
-                sCard.className = 'sources-card';
-                sCard.innerHTML = '<div class="sources-title">🔗 Nguồn tham khảo</div>';
-                const sList = document.createElement('div');
-                sList.className = 'sources-list';
-                sources.forEach(src => {
-                  const a = document.createElement('a');
-                  a.className = 'source-link';
-                  a.href = src.url;
-                  a.target = '_blank';
-                  a.rel = 'noopener noreferrer';
-                  a.textContent = '🌐 ' + (src.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 32));
-                  sList.appendChild(a);
-                });
-                sCard.appendChild(sList);
-                reply.bubble.appendChild(sCard);
-              }
-              scrollBottom();
-              continue;
-            }
-            if (j.type === 'delta') {
-              answer += j.content || '';
-              reasoning += j.reasoning || '';
-            } else if (j.choices) {
-              // 2. Phản hồi kiểu tiêu chuẩn (OpenAI format từ chat)
-              const delta = j.choices?.[0]?.delta || {};
-              reasoning += delta.reasoning || delta.reasoning_content || '';
-              answer += delta.content || '';
-            }
-
-            if(reply.reasoningPanel && reasoning){
-              reply.reasoningPanel.hidden = false;
-              reply.reasoningSummary.textContent = 'Đang suy luận…';
-              reply.reasoningBody.innerHTML = formatted(reasoning);
-            }
-            reply.answer.innerHTML = formatted(answer) || (reasoning ? '<span class="typing">Đang tổng hợp câu trả lời…</span>' : '<span class="typing">Đang suy luận…</span>');
-            scrollBottom();
-          } catch {}
+          reply.answer.innerHTML = formatted(answer) || (reasoning ? '<span class="typing">Đang tổng hợp câu trả lời…</span>' : '<span class="typing">Đang suy luận…</span>');
+          scrollBottom();
         }
       }
     }
 
-    if(!answer && !reasoning) throw new Error('Model chưa trả nội dung. Kiểm tra endpoint Modal hoặc quyền truy cập.');
+    if(!answer && !reasoning) throw new Error('Model chưa trả nội dung. Kiểm tra endpoint Modal.');
 
     if(reply.reasoningPanel){
       if(reasoning){
@@ -791,15 +623,11 @@ async function send(text){
       showAuth(err.message);
     }
   } finally {
-    // Chuẩn Claude/ChatGPT: Dù stream trọn vẹn hay gặp ngắt mạng/timeout giữa chừng,
-    // toàn bộ nội dung đã sinh ra đều được LƯU 100% vào Database Supabase, không bị mất lịch sử!
     if(answer || reasoning){
       const assistantMsg = {
         role: 'assistant',
         content: answer,
-        ...(reasoning ? { reasoning } : {}),
-        ...(steps.length > 0 ? { steps } : {}),
-        ...(sources.length > 0 ? { sources } : {})
+        ...(reasoning ? { reasoning } : {})
       };
       c.messages.push(assistantMsg);
       await persistConversation(c).catch(() => {});
@@ -813,11 +641,269 @@ async function send(text){
   }
 }
 
-// Bắt sự kiện chuyển tab
-if (tabChat) tabChat.onclick = () => switchMode('chat');
-if (tabAgent) tabAgent.onclick = () => switchMode('agent');
+// =========================================================================
+// STUDIO TẠO HÌNH ẢNH (IMAGE GENERATION STUDIO)
+// =========================================================================
 
-// Bắt sự kiện tải ảnh (Nút đính kèm 📎, File Input, Xóa preview)
+// Lựa chọn tỉ lệ khung hình (Aspect Ratio)
+document.querySelectorAll('.ratio-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.ratio-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentWidth = Number(btn.dataset.w) || 1024;
+    currentHeight = Number(btn.dataset.h) || 1024;
+  });
+});
+
+// Điều khiển Slider realtime
+const stepsInput = $('#imgSteps');
+const stepsVal = $('#stepsVal');
+if (stepsInput && stepsVal) {
+  stepsInput.addEventListener('input', () => { stepsVal.textContent = stepsInput.value; });
+}
+
+const cfgInput = $('#imgGuidance');
+const cfgVal = $('#cfgVal');
+if (cfgInput && cfgVal) {
+  cfgInput.addEventListener('input', () => { cfgVal.textContent = cfgInput.value; });
+}
+
+// Cập nhật giá trị khuyên dùng khi đổi model
+const modelSelectEl = $('#imgModelSelect');
+if (modelSelectEl) {
+  modelSelectEl.addEventListener('change', () => {
+    const m = modelSelectEl.value.toLowerCase();
+    if (m.includes('schnell')) {
+      stepsInput.value = 4;
+      stepsVal.textContent = '4';
+      cfgInput.value = 0.0;
+      cfgVal.textContent = '0.0';
+    } else if (m.includes('dev')) {
+      stepsInput.value = 25;
+      stepsVal.textContent = '25';
+      cfgInput.value = 3.5;
+      cfgVal.textContent = '3.5';
+    } else {
+      stepsInput.value = 25;
+      stepsVal.textContent = '25';
+      cfgInput.value = 6.5;
+      cfgVal.textContent = '6.5';
+    }
+  });
+}
+
+function loadRecentImages(){
+  try {
+    const raw = localStorage.getItem(RECENT_IMAGES_KEY);
+    recentImages = raw ? JSON.parse(raw) : [];
+  } catch {
+    recentImages = [];
+  }
+  renderGallery();
+}
+
+function saveRecentImages(){
+  try {
+    localStorage.setItem(RECENT_IMAGES_KEY, JSON.stringify(recentImages.slice(0, 30)));
+  } catch {}
+}
+
+function renderGallery(){
+  const grid = $('#galleryGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  if (!recentImages.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;font-size:12px;color:#7e7e8b;padding:8px 0">Chưa có ảnh nào trong phiên này.</div>';
+    return;
+  }
+  recentImages.forEach((item, idx) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'gallery-thumb';
+    thumb.title = item.prompt || 'Ảnh đã tạo';
+    const img = document.createElement('img');
+    img.src = item.image;
+    img.alt = 'Thumbnail';
+    thumb.appendChild(img);
+    thumb.onclick = () => displayResult(item);
+    grid.appendChild(thumb);
+  });
+}
+
+function displayResult(item){
+  const placeholder = $('#viewportPlaceholder');
+  const loading = $('#viewportLoading');
+  const result = $('#viewportResult');
+  const mainImg = $('#mainResultImg');
+
+  if (placeholder) placeholder.style.display = 'none';
+  if (loading) loading.style.display = 'none';
+  if (result) result.style.display = 'flex';
+  if (mainImg) mainImg.src = item.image;
+
+  $('#metaModel').textContent = item.model || 'SDXL / Flux';
+  $('#metaDimensions').textContent = `${item.width || currentWidth} × ${item.height || currentHeight}px`;
+  $('#metaElapsed').textContent = item.elapsed_seconds ? `${item.elapsed_seconds}s` : 'N/A';
+  $('#metaSeed').textContent = item.seed !== undefined ? item.seed : 'N/A';
+
+  const dlBtn = $('#downloadImgBtn');
+  if (dlBtn) {
+    dlBtn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = item.image;
+      a.download = `ai-image-${item.seed || Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+  }
+
+  const openBtn = $('#openFullBtn');
+  if (openBtn) {
+    openBtn.onclick = () => {
+      const w = window.open('');
+      w.document.write(`<title>Xem ảnh kích thước gốc</title><body style="margin:0;background:#0d0d0f;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="${item.image}" style="max-width:100%;max-height:100vh;object-fit:contain;box-shadow:0 0 40px #000;"></body>`);
+    };
+  }
+}
+
+// Submit Tạo Hình Ảnh
+const imageGenForm = $('#imageGenForm');
+if (imageGenForm) {
+  imageGenForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (busy) return;
+
+    const promptText = ($('#imgPrompt').value || '').trim();
+    if (!promptText) {
+      window.alert('Vui lòng nhập mô tả hình ảnh (Prompt).');
+      return;
+    }
+
+    const currentEmail = getEmailFromSession();
+    if (!checkIsAdmin(currentEmail)) {
+      window.alert('Quyền truy cập bị từ chối: Chỉ tài khoản datviphero@gmail.com mới được phép tạo ảnh.');
+      return;
+    }
+
+    const btn = $('#generateImgBtn');
+    const btnSpinner = btn.querySelector('.btn-spinner');
+    const btnIcon = btn.querySelector('.btn-icon');
+    const btnText = btn.querySelector('.btn-text');
+
+    const placeholder = $('#viewportPlaceholder');
+    const loading = $('#viewportLoading');
+    const result = $('#viewportResult');
+    const timerBadge = $('#elapsedTimer');
+    const loadingStatusText = $('#loadingStatusText');
+
+    busy = true;
+    btn.disabled = true;
+    if (btnSpinner) btnSpinner.style.display = 'inline-block';
+    if (btnIcon) btnIcon.style.display = 'none';
+    if (btnText) btnText.textContent = 'Đang render trên GPU...';
+
+    if (placeholder) placeholder.style.display = 'none';
+    if (result) result.style.display = 'none';
+    if (loading) loading.style.display = 'flex';
+
+    let startTime = Date.now();
+    timerBadge.textContent = '0.0s';
+    const timerInterval = setInterval(() => {
+      const sec = ((Date.now() - startTime) / 1000).toFixed(1);
+      timerBadge.textContent = `${sec}s`;
+      if (sec > 12) {
+        loadingStatusText.textContent = 'Đang hoàn thiện bước khử nhiễu (Denoising steps)...';
+      }
+    }, 100);
+
+    try {
+      const token = await accessToken();
+      const payload = {
+        prompt: promptText,
+        negative_prompt: ($('#imgNegativePrompt').value || '').trim(),
+        width: currentWidth,
+        height: currentHeight,
+        steps: Number($('#imgSteps').value) || 25,
+        guidance_scale: Number($('#imgGuidance').value) || 6.5,
+        seed: Number($('#imgSeed').value),
+        model_id: $('#imgModelSelect').value,
+      };
+
+      const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/image`, {
+        method: 'POST',
+        headers: {
+          apikey: cfg.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        let errMessage = `Lỗi tạo ảnh (${res.status})`;
+        try {
+          const errData = await res.json();
+          errMessage = errData.error || errMessage;
+        } catch {}
+        throw new Error(errMessage);
+      }
+
+      const data = await res.json();
+      if (!data.image) throw new Error('Không nhận được dữ liệu ảnh trả về từ GPU.');
+
+      const item = {
+        image: data.image,
+        prompt: promptText,
+        seed: data.seed,
+        elapsed_seconds: data.elapsed_seconds,
+        model: data.model || payload.model_id,
+        width: data.width || currentWidth,
+        height: data.height || currentHeight,
+      };
+
+      recentImages.unshift(item);
+      saveRecentImages();
+      renderGallery();
+      displayResult(item);
+
+    } catch (err) {
+      clearInterval(timerInterval);
+      if (loading) loading.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'flex';
+      window.alert(`Không thể tạo ảnh: ${err.message}`);
+    } finally {
+      clearInterval(timerInterval);
+      busy = false;
+      btn.disabled = false;
+      if (btnSpinner) btnSpinner.style.display = 'none';
+      if (btnIcon) btnIcon.style.display = 'inline-block';
+      if (btnText) btnText.textContent = 'Tạo Hình Ảnh Ngay';
+    }
+  });
+}
+
+// Xóa danh sách ảnh vừa tạo
+const clearRecentBtn = $('#clearRecentBtn');
+if (clearRecentBtn) {
+  clearRecentBtn.onclick = () => {
+    if (!recentImages.length) return;
+    if (window.confirm('Xóa toàn bộ lịch sử ảnh vừa tạo trong phiên?')) {
+      recentImages = [];
+      saveRecentImages();
+      renderGallery();
+      $('#viewportResult').style.display = 'none';
+      $('#viewportPlaceholder').style.display = 'flex';
+    }
+  };
+}
+
+// Sự kiện đổi tab
+if (tabChat) tabChat.onclick = () => switchMode('chat');
+if (tabImage) tabImage.onclick = () => switchMode('image');
+
+// =========================================================================
+// BẮT SỰ KIỆN ĐÍNH KÈM VÀ KÉO THẢ ẢNH CHAT
+// =========================================================================
 const attachBtn = $('#attachBtn');
 const imageInput = $('#imageInput');
 const removeImageBtn = $('#removeImageBtn');
@@ -833,7 +919,6 @@ if (removeImageBtn) {
   removeImageBtn.onclick = clearPendingImage;
 }
 
-// Bắt sự kiện Dán ảnh từ Clipboard (Ctrl + V)
 window.addEventListener('paste', (e) => {
   const items = (e.clipboardData || window.clipboardData)?.items;
   if (!items) return;
@@ -849,7 +934,6 @@ window.addEventListener('paste', (e) => {
   }
 });
 
-// Bắt sự kiện Kéo thả ảnh vào khung nhập liệu (Drag & Drop)
 const composerForm = $('#chatForm');
 if (composerForm) {
   ['dragenter', 'dragover'].forEach(ev => {
@@ -889,7 +973,6 @@ input.addEventListener('keydown', e => {
 
 $('#newChat').onclick = newChat;
 
-// Gán gợi ý prompt cho cả hai tab
 document.addEventListener('click', e => {
   const btn = e.target.closest('.suggestion');
   if (btn && btn.dataset.prompt) {
@@ -911,7 +994,7 @@ document.addEventListener('keydown', e => {
   if(e.key === 'Escape') $('#sidebar').classList.remove('open');
 });
 
-// Khởi chạy
+// Khởi chạy hệ thống
 (async () => {
   try {
     session = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');

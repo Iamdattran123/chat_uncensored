@@ -1,12 +1,17 @@
-# Khung Chat — không cần VPS
+# Khung Chat & Studio Tạo Hình Ảnh Không Kiểm Duyệt (Serverless Modal + Supabase)
 
-Kiến trúc cho 2 người dùng: GitHub Pages host giao diện tĩnh; Supabase Auth/Postgres giữ tài khoản và lịch sử riêng; Supabase Edge Function làm proxy bí mật tới Modal; Modal chỉ khởi động GPU khi có chat. Không dùng GitHub Actions như máy chủ.
+Kiến trúc tối ưu không cần thuê VPS cố định: GitHub Pages host giao diện tĩnh; Supabase Auth/Postgres lưu tài khoản và lịch sử riêng tư; Supabase Edge Functions làm proxy bảo mật; Modal Serverless GPU chỉ khởi động khi có request và tự động tắt (scale to 0) khi nghỉ để tiết kiệm tối đa chi phí.
 
-## 1) Tạo Supabase project và bảng lịch sử
+- **Chế độ Chat (Dành cho mọi tài khoản)**: Trò chuyện văn bản với LLM qua `supabase/functions/chat` và `modal_app.py`.
+- **Chế độ Studio Tạo Ảnh (Độc quyền `datviphero@gmail.com`)**: Tạo hình ảnh không kiểm duyệt (Uncensored 100%, nude, anatomy chi tiết) qua `supabase/functions/image` và `modal_image.py`.
+
+---
+
+## 1) Tạo Supabase Project và Bảng Lịch Sử
 
 1. Tạo project tại Supabase.
-2. Mở **SQL Editor**, chạy toàn bộ `supabase/schema.sql`.
-3. Vào **Project Settings → API**; lấy Project URL và public anon/publishable key. Điền vào `config.js`:
+2. Mở **SQL Editor**, chạy toàn bộ file `supabase/schema.sql`.
+3. Vào **Project Settings → API**; lấy Project URL và public anon key điền vào `config.js`:
 
 ```js
 window.APP_CONFIG = {
@@ -15,50 +20,13 @@ window.APP_CONFIG = {
 };
 ```
 
-Public anon key được phép ở frontend; không bao giờ dùng `service_role` key ở đây. Bảo vệ dữ liệu bằng RLS trong schema.
+4. Trong **Authentication → Users**, tạo tài khoản quản trị viên `datviphero@gmail.com` và các tài khoản người dùng khác nếu cần.
 
-4. Trong **Authentication → Users**, tạo riêng hai tài khoản (email/mật khẩu) cho bạn và bạn của bạn. Tắt public sign-ups nếu chỉ muốn hai tài khoản.
+---
 
-Mỗi dòng hội thoại có `user_id`; chính sách RLS buộc người đăng nhập chỉ đọc/sửa/xoá được hội thoại của chính mình. Lịch sử được đồng bộ trong database, không dùng chung `localStorage`.
+## 2) Triển Khai Model Lên Modal Serverless GPU
 
-## 2) Deploy proxy tới Modal — khoá chỉ nằm ở Supabase
-
-Cài Supabase CLI, đăng nhập và liên kết project:
-
-```bash
-npm install -g supabase
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-```
-
-Đặt secrets cho Edge Function rồi deploy:
-
-```bash
-# Cấu hình Chat thường (dùng model 7B/8B hiện tại cho bạn của bạn)
-supabase secrets set MODAL_BASE_URL="https://YOUR-CHAT-ENDPOINT.modal.run" MODAL_API_KEY="YOUR_LONG_RANDOM_TOKEN" MODEL_ID="Qwen/Qwen2.5-7B-Instruct"
-
-# Cấu hình Agent Coder 32B & Cloud Sandbox (độc quyền cho bạn datviphero@...)
-supabase secrets set AGENT_MODAL_BASE_URL="https://YOUR-AGENT-SERVE-ENDPOINT.modal.run" AGENT_MODEL_ID="Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" SANDBOX_BASE_URL="https://YOUR-SANDBOX-ENDPOINT.modal.run"
-
-supabase functions deploy chat
-supabase functions deploy agent
-```
-
-`MODAL_API_KEY` phải khớp với token của Modal. Không đưa token đó vào `config.js`, GitHub, hay trình duyệt.
-- **Function `chat`**: Phục vụ chat thông thường (bạn bè và bạn đều dùng được, chạy `modal_app.py`).
-- **Function `agent`**: Phục vụ tác tử Coder 32B + Cloud Sandbox gVisor cách ly (chỉ tài khoản `datviphero@...` mới truy cập được, chạy `modal_agent.py`).
-
-Nếu chưa deploy model, xem phần **Triển khai model lên Modal** bên dưới.
-
-## 3) Host giao diện miễn phí trên GitHub Pages
-
-Đưa các file giao diện (`index.html`, `styles.css`, `app.js`, `config.js`) lên một GitHub repository. Mở **Settings → Pages**, chọn deploy từ branch/folder chứa các file, rồi đợi GitHub cấp URL. Các đường dẫn asset đã dùng tương đối để chạy được ở URL dạng `username.github.io/repo/`.
-
-Mở URL đó, đăng nhập bằng tài khoản Supabase. Bạn của bạn đăng nhập bằng tài khoản riêng; danh sách lịch sử hai người được cô lập ở database bằng RLS.
-
-## 4) Triển khai Model lên Modal
-
-Cần tài khoản Modal và Modal CLI đã được `modal setup`. Tạo secret token xác thực một lần:
+Cần tài khoản Modal và CLI đã cấu hình:
 
 ```bash
 python -m pip install modal
@@ -71,23 +39,59 @@ modal secret create model-auth MODEL_API_KEY="$MODEL_API_KEY"
 ```bash
 modal deploy modal_app.py
 ```
-Copy URL cấp cho `serve` điền vào biến `MODAL_BASE_URL` ở Bước 2.
+Copy URL cấp cho endpoint `serve` để điền vào `MODAL_BASE_URL`.
 
-### B. Deploy Agent Coder 32B & Cloud Sandbox (`modal_agent.py`):
+### B. Deploy Studio Tạo Ảnh Không Kiểm Duyệt (`modal_image.py`):
 ```bash
-modal deploy modal_agent.py
+modal deploy modal_image.py
 ```
-Sau khi deploy `modal_agent.py`, Modal sẽ cấp 2 URL:
-1. Endpoint vLLM Coder 32B $\rightarrow$ Điền vào `AGENT_MODAL_BASE_URL`.
-2. Endpoint Cloud Sandbox $\rightarrow$ Điền vào `SANDBOX_BASE_URL`.
+Sau khi deploy `modal_image.py`, Modal sẽ cấp URL endpoint dạng:
+`https://<your-username>--private-image-studio-imagestudio-generate.modal.run`
 
-## Dùng thử giao diện cục bộ
+---
 
-Giao diện tĩnh có thể preview bằng `node server.js` rồi mở `http://localhost:3000`; cần cấu hình `config.js` trước khi đăng nhập.
+## 3) Deploy Supabase Edge Functions & Secrets
 
-## Chi phí và giới hạn cần biết
+Cài Supabase CLI, đăng nhập và liên kết project:
 
-- GitHub Pages không chạy backend hay model — chỉ host file giao diện tĩnh.
-- Modal scale GPU về 0 khi không có request; tin nhắn đầu tiên sau lúc nghỉ cần chờ cold start/nạp model. Cấu hình cache model trên Modal có thể giảm thời gian chờ.
-- Supabase Free phù hợp để thử với ít người, nhưng dự án Free ít hoạt động có thể bị tự pause; nếu cần đảm bảo luôn truy cập được, cần kiểm tra điều khoản/gói hiện tại hoặc chọn gói trả phí.
-- App mẫu chưa thêm giới hạn tốc độ hay hạn mức chi tiêu; hãy bật billing alerts/rate limits phù hợp trước khi chia sẻ rộng. Không chia sẻ URL/token Modal ngoài Edge Function.
+```bash
+npm install -g supabase
+supabase login
+supabase link --project-ref YOUR_PROJECT_REF
+```
+
+Cấu hình Secrets trong Supabase:
+
+```bash
+# 1. Cấu hình Chat thường
+supabase secrets set MODAL_BASE_URL="https://YOUR-CHAT-ENDPOINT.modal.run" MODAL_API_KEY="YOUR_LONG_RANDOM_TOKEN"
+
+# 2. Cấu hình Studio Tạo Ảnh (Độc quyền datviphero@gmail.com)
+supabase secrets set IMAGE_MODAL_BASE_URL="https://YOUR-IMAGE-ENDPOINT.modal.run/generate"
+
+# 3. Deploy functions
+supabase functions deploy chat
+supabase functions deploy image
+```
+
+---
+
+## 4) Host Giao Diện Miễn Phí Trên GitHub Pages
+
+Đưa các file (`index.html`, `styles.css`, `app.js`, `config.js`) lên GitHub repository, bật GitHub Pages trong **Settings → Pages**. Khi đăng nhập bằng `datviphero@gmail.com`, hệ thống sẽ tự động mở tab **Tạo Hình Ảnh**. Các tài khoản khác chỉ thấy tab Chat thông thường.
+
+---
+
+## 5) Bảng Đánh Giá Model & Phân Tích Chi Phí Chi Tiết
+
+| Model | Đặc điểm & Khả năng Uncensored | GPU tối ưu | Thời gian render / ảnh | Chi phí Modal Serverless | Chi phí qua API bên ngoài |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **RealVisXL V5.0** *(Khuyên dùng số 1 cho ảnh thật)* | Vua ảnh đời thực photorealistic, làn da thật, cơ thể người chi tiết, 100% Uncensored không có safety filter. | **Nvidia L4 (24GB)** | **2.5s – 3.5s** (25 steps) | **~$0.0007 / ảnh** (~18 VNĐ) | ~$0.005 – $0.008 / ảnh (Fal/Together) |
+| **Pony Diffusion V6 XL** *(Khuyên dùng số 1 cho NSFW/Anime/2.5D)* | Chuyên trị mọi tư thế khó, giải phẫu người hoàn hảo, hỗ trợ tag Danbooru lẫn văn nói tự nhiên, không rào cản đạo đức. | **Nvidia L4 (24GB)** | **2.5s – 3.5s** (25 steps) | **~$0.0007 / ảnh** (~18 VNĐ) | ~$0.005 – $0.009 / ảnh |
+| **FLUX.1 [schnell]** *(Khuyên dùng cho tốc độ siêu tốc)* | Kiến trúc Flow Matching 12B, chỉ cần 4 steps, ánh sáng, chi tiết tóc tai và bàn tay cực chuẩn. | **Nvidia L4 (24GB)** | **3.0s – 4.5s** (4 steps) | **~$0.0009 / ảnh** (~22 VNĐ) | $0.003 / ảnh (Together/Fal) |
+| **FLUX.1 [dev]** *(Chất lượng tối thượng)* | 12B transformer chi tiết tối đa, độ bám prompt và giải phẫu phức tạp xuất sắc nhất hiện nay. | **Nvidia A10G / L40S** | **12s – 15s** (25 steps) | **~$0.0040 / ảnh** (~100 VNĐ) | $0.025 / ảnh (~625 VNĐ) |
+
+### 💡 Tại sao tự host trên Modal là tối ưu nhất?
+1. **Uncensored 100%**: Mã nguồn chạy `pipe.safety_checker = None`, không bị nhà cung cấp API bên thứ ba can thiệp hoặc gắn cờ tài khoản.
+2. **Chi phí cực thấp**: Modal tính phí theo từng giây GPU hoạt động. Với GPU Nvidia L4 ($0.80/h ~ $0.00022/s), 1 USD (~25.000 VNĐ) có thể tạo được hơn **1.400 bức ảnh** chất lượng cao.
+3. **Scale-to-zero**: Khi không dùng, sau 120 giây Modal tự động tắt toàn bộ GPU, chi phí duy trì là **0 USD**.
