@@ -11,24 +11,15 @@ from typing import Optional
 # Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu
 app = modal.App("private-image-studio")
 
-# Volume lưu trữ weights model để nạp tức thì
+# Volume lưu trữ weights model vĩnh viễn - Mount vào thư mục riêng /weights
 weights_volume = modal.Volume.from_name("image-weights-cache", create_if_missing=True)
 
 MODEL_NAME = "SG161222/RealVisXL_V5.0"
 
-# Hàm tải trước model vào Image cache để KHÔNG BỊ COLD START TIMEOUT
-def download_models():
-    from huggingface_hub import snapshot_download
-    print(f"[Build] Đang tải sẵn weights model {MODEL_NAME} vào cache...")
-    snapshot_download(
-        repo_id=MODEL_NAME,
-        allow_patterns=["*.safetensors", "*.json", "*.txt"],
-        ignore_patterns=["*.bin", "*.onnx"]
-    )
-    print("[Build] Tải hoàn tất! Image đã sẵn sàng.")
-
+# Image môi trường PyTorch + Diffusers tối tân nhất
 image = (
     modal.Image.debian_slim(python_version="3.11")
+    .apt_install("libgl1", "libglib2.0-0")
     .pip_install(
         "torch>=2.4.0",
         "diffusers>=0.30.0",
@@ -42,7 +33,7 @@ image = (
         "invisible-watermark>=0.2.0",
         "huggingface_hub>=0.24.0"
     )
-    .run_function(download_models)
+    .env({"HF_HOME": "/weights"})  # Trỏ toàn bộ cache HuggingFace vào Volume /weights
 )
 
 class GenerateRequest(BaseModel):
@@ -59,24 +50,24 @@ class GenerateRequest(BaseModel):
 
 @app.cls(
     image=image,
-    gpu="A10G",  # Dùng A10G (24GB VRAM): Nguồn cung cực lớn trên Modal, không bao giờ bị nghẽn capacity chờ L4
-    volumes={"/root/.cache/huggingface": weights_volume},
+    gpu="A10G",  # Dùng A10G (24GB VRAM): Nguồn cung cực lớn, khởi động tức thì, không bị nghẽn capacity
+    volumes={"/weights": weights_volume},  # Mount volume vào đường dẫn sạch /weights (tránh lỗi non-empty path)
     secrets=[modal.Secret.from_name("model-auth")],
     timeout=600,
     min_containers=0,
     max_containers=1,
-    scaledown_window=180,  # 3 phút không dùng tự scale về 0 để tiết kiệm chi phí
+    scaledown_window=240,  # 4 phút không dùng tự scale về 0 để bảo vệ ví tiền
 )
 class ImageStudio:
     @modal.enter()
     def setup(self):
-        from diffusers import AutopipelineForText2Image
+        from diffusers import AutoPipelineForText2Image
         
         default_model = os.environ.get("IMAGE_MODEL_ID", MODEL_NAME)
         self.current_model_id = default_model
-        print(f"[ImageStudio] Đang nạp pipeline model: {default_model}...")
+        print(f"[ImageStudio] Đang nạp pipeline model {default_model} từ /weights...")
 
-        self.pipe = AutopipelineForText2Image.from_pretrained(
+        self.pipe = AutoPipelineForText2Image.from_pretrained(
             default_model,
             torch_dtype=torch.float16,
             variant="fp16",
@@ -98,9 +89,9 @@ class ImageStudio:
     def load_model_if_needed(self, target_model: str):
         if self.current_model_id == target_model:
             return
-        from diffusers import AutopipelineForText2Image
+        from diffusers import AutoPipelineForText2Image
         print(f"[ImageStudio] Chuyển đổi model sang: {target_model}...")
-        self.pipe = AutopipelineForText2Image.from_pretrained(
+        self.pipe = AutoPipelineForText2Image.from_pretrained(
             target_model,
             torch_dtype=torch.float16,
             variant="fp16",
@@ -207,3 +198,20 @@ class ImageStudio:
     @modal.fastapi_endpoint(method="GET")
     def health(self):
         return {"status": "ok", "current_model": self.current_model_id}
+
+# Hàm CLI tải sẵn model 1 lần duy nhất vào Volume /weights để không bao giờ bị timeout
+@app.function(
+    image=image,
+    volumes={"/weights": weights_volume},
+    timeout=1200,
+)
+def warmup():
+    from huggingface_hub import snapshot_download
+    print(f"[Warmup] Đang tải sẵn model {MODEL_NAME} vào Volume /weights...")
+    snapshot_download(
+        repo_id=MODEL_NAME,
+        allow_patterns=["*.safetensors", "*.json", "*.txt"],
+        ignore_patterns=["*.bin", "*.onnx"]
+    )
+    weights_volume.commit()
+    print("[Warmup] Hoàn tất 100%! Model đã nằm trong Volume, web khởi động sẽ tức thì.")
