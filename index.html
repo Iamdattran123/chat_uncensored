@@ -166,10 +166,10 @@
                 <!-- Slider độ bám ảnh mẫu -->
                 <div class="ref-strength-box">
                   <div class="strength-labels">
-                    <span>Mức độ bám ảnh mẫu: <b id="strengthVal">65%</b></span>
-                    <small id="strengthDesc">Chuẩn nhất: Giữ nét mặt, tự do tạo dáng & bối cảnh mới</small>
+                    <span>Mức độ bám ảnh mẫu: <b id="strengthVal">70%</b></span>
+                    <small id="strengthDesc">Chuẩn nhất: Đổi tư thế, trang phục & bối cảnh theo Prompt, vẫn giữ nét mặt</small>
                   </div>
-                  <input type="range" id="refStrength" min="0.2" max="0.9" value="0.65" step="0.05">
+                  <input type="range" id="refStrength" min="0.3" max="0.9" value="0.70" step="0.05">
                 </div>
               </div>
             </div>
@@ -177,7 +177,12 @@
             <!-- Prompt chính -->
             <div class="form-group">
               <label for="imgPrompt">Mô tả hình ảnh (Prompt)</label>
-              <textarea id="imgPrompt" rows="4" placeholder="Nhập mô tả chi tiết: nhân vật, trang phục, góc máy, ánh sáng, bối cảnh, tư thế... (Tiếng Anh hoặc Tiếng Việt)" required></textarea>
+              <textarea id="imgPrompt" rows="4" placeholder="Nhập mô tả chi tiết: nhân vật, trang phục, góc máy, ánh sáng, bối cảnh, tư thế... (Hỗ trợ cả Tiếng Việt và Tiếng Anh)" required></textarea>
+              <div class="prompt-hint">
+                <span class="magic-icon">✨</span>
+                <span>Hệ thống tự động dịch tiếng Việt sang thẻ tiếng Anh chuẩn Studio (Full body, Uncensored, Lighting...)</span>
+              </div>
+            </div>
             </div>
 
             <!-- Negative Prompt -->

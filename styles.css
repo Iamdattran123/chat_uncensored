@@ -94,6 +94,9 @@
 .studio-form textarea:focus{border-color:#8b5cf6}
 .studio-form textarea::placeholder{color:#787884}
 
+.prompt-hint{display:flex;align-items:center;gap:6px;font-size:11px;color:#c084fc;background:#241935;border:1px solid #a855f740;padding:6px 10px;border-radius:8px;margin-top:2px;line-height:1.4}
+.magic-icon{font-size:13px}
+
 /* Accordion Nâng cao */
 .advanced-settings{background:#1c1c1f;border:1px solid #323238;border-radius:10px;padding:10px 12px}
 .advanced-settings summary{font-size:12px;font-weight:600;color:#b4b4bf;cursor:pointer;outline:none;user-select:none}

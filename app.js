@@ -765,15 +765,60 @@ if (refStrength && strengthVal) {
     const val = Number(refStrength.value);
     strengthVal.textContent = Math.round(val * 100) + '%';
     if (strengthDesc) {
-      if (val < 0.45) {
-        strengthDesc.textContent = 'Rất sát ảnh mẫu: Giữ tối đa đường nét khuôn mặt & bố cục';
-      } else if (val <= 0.70) {
-        strengthDesc.textContent = 'Chuẩn nhất: Giữ nét mặt & phong thái, đổi dáng và bối cảnh';
+      if (val < 0.50) {
+        strengthDesc.textContent = '⚠️ Quá thấp: Giữ nguyên 80% ảnh mẫu (Không đổi được dáng ngồi hay bối cảnh theo Prompt)';
+      } else if (val <= 0.75) {
+        strengthDesc.textContent = '🔥 Chuẩn nhất: Đổi tư thế, trang phục & bối cảnh theo Prompt, vẫn giữ nét mặt ảnh mẫu';
       } else {
-        strengthDesc.textContent = 'Biến đổi mạnh: Lấy cảm hứng từ ảnh mẫu, sáng tạo tự do';
+        strengthDesc.textContent = 'Biến đổi mạnh: Ưu tiên 90% theo Prompt, chỉ lấy cảm hứng từ ảnh mẫu';
       }
     }
   });
+}
+
+// Bộ từ điển thông minh tự động dịch tiếng Việt sang Tag tiếng Anh chuyên dụng cho Model SDXL
+function enhanceAndTranslatePrompt(text) {
+  let p = (text || '').trim();
+  if (!p) return p;
+
+  const isVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(p);
+  if (!isVietnamese) return p;
+
+  let en = p.toLowerCase();
+  en = en.replace(/^(tạo ảnh|vẽ ảnh|hãy vẽ|hãy tạo|tạo cho tôi|vẽ cho tôi|hình ảnh|tạo 1 ảnh|vẽ 1 ảnh)\s+/i, '');
+
+  const dict = [
+    [/người phụ nữ|phụ nữ|cô gái|cô em|gái xinh|baddie/g, 'beautiful woman'],
+    [/người đàn ông|đàn ông|chàng trai/g, 'handsome man'],
+    [/châu á|người việt|việt nam/g, 'asian, vietnamese'],
+    [/không mặc gì|khỏa thân|nude|cởi hết|không quần áo|trần như nhộng/g, 'naked, nude, full body nude, explicit, bare skin, uncensored'],
+    [/đồ lót|nội y/g, 'lingerie, lace underwear'],
+    [/bikini|áo tắm/g, 'sexy bikini'],
+    [/váy ngắn|chân váy/g, 'mini skirt'],
+    [/áo sơ mi/g, 'shirt'],
+    [/đang ngồi|ngồi/g, 'sitting, seated, full body shot'],
+    [/đang nằm|nằm/g, 'lying down, reclining'],
+    [/đang đứng|đứng/g, 'standing'],
+    [/quỳ|đang quỳ/g, 'kneeling'],
+    [/nhìn vào ống kính|nhìn thẳng/g, 'looking at camera'],
+    [/tự sướng|selfie/g, 'mirror selfie, direct flash'],
+    [/nhà vệ sinh công cộng|nhà vệ sinh|toilet/g, 'in a public restroom, ceramic wall tiles, toilet stall, realistic bathroom lighting'],
+    [/bờ biển|bãi biển|biển/g, 'on a tropical beach, ocean background, sunset lighting'],
+    [/phòng ngủ|giường/g, 'in a cozy bedroom, on the bed'],
+    [/phòng tắm|bồn tắm/g, 'in a luxurious bathroom, bathtub'],
+    [/khách sạn/g, 'in a hotel room'],
+    [/đường phố|ngoài đường/g, 'on a city street at night'],
+    [/ảnh thật|chân thực|như thật|siêu thực/g, 'photorealistic, raw photo, realistic skin texture, 8k uhd, soft natural lighting']
+  ];
+
+  dict.forEach(([rgx, repl]) => {
+    en = en.replace(rgx, repl);
+  });
+
+  if (!en.includes('photorealistic') && !en.includes('photo')) {
+    en = `${en}, photorealistic, raw photo, ultra detailed skin texture, realistic lighting, 8k uhd`;
+  }
+  return en;
 }
 
 // Cập nhật giá trị khuyên dùng khi đổi model
@@ -926,8 +971,9 @@ if (imageGenForm) {
 
     try {
       const token = await accessToken();
+      const optimizedPrompt = enhanceAndTranslatePrompt(promptText);
       const payload = {
-        prompt: promptText,
+        prompt: optimizedPrompt,
         negative_prompt: ($('#imgNegativePrompt').value || '').trim(),
         width: currentWidth,
         height: currentHeight,
@@ -936,7 +982,7 @@ if (imageGenForm) {
         seed: Number($('#imgSeed').value),
         model_id: $('#imgModelSelect').value,
         init_image: referenceImage || null,
-        strength: referenceImage ? Number($('#refStrength')?.value || 0.65) : null,
+        strength: referenceImage ? Number($('#refStrength')?.value || 0.70) : null,
       };
 
       const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/image`, {
