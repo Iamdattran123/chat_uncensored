@@ -770,87 +770,266 @@ if (refDropzone && refImageInput) {
 if (removeRefBtn) removeRefBtn.onclick = clearReferenceImage;
 if (clearRefBtn) clearRefBtn.onclick = clearReferenceImage;
 
+// Quản lý chế độ Ảnh Mẫu: 'face' (IP-Adapter Giữ mặt + Đổi dáng mới) | 'pose' (Img2Img giữ bố cục)
+let currentRefMode = 'face';
+document.querySelectorAll('#refModeGrid .ref-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#refModeGrid .ref-mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentRefMode = btn.dataset.mode || 'face';
+    const hint = $('#refModeHint');
+    if (hint) {
+      hint.textContent = currentRefMode === 'face'
+        ? 'IP-Adapter Face: Giữ nét mặt & Tự do sáng tạo dáng người mới theo Prompt'
+        : 'Img2Img: Bám theo khung hình và dáng chụp gốc của ảnh mẫu';
+    }
+  });
+});
+
 if (refStrength && strengthVal) {
   refStrength.addEventListener('input', () => {
     const val = Number(refStrength.value);
     strengthVal.textContent = Math.round(val * 100) + '%';
     if (strengthDesc) {
-      if (val < 0.50) {
-        strengthDesc.textContent = '⚠️ Quá thấp: Giữ nguyên 80% ảnh mẫu (Không đổi được dáng ngồi hay bối cảnh theo Prompt)';
-      } else if (val <= 0.75) {
-        strengthDesc.textContent = '🔥 Chuẩn nhất: Đổi tư thế, trang phục & bối cảnh theo Prompt, vẫn giữ nét mặt ảnh mẫu';
+      if (currentRefMode === 'face') {
+        if (val < 0.45) {
+          strengthDesc.textContent = 'Nhẹ: Lấy cảm hứng đường nét khuôn mặt, tự do tối đa';
+        } else if (val <= 0.75) {
+          strengthDesc.textContent = '🔥 Chuẩn nhất: Giữ nét mặt ảnh mẫu, còn tư thế (quỳ, đứng, ngồi...) sáng tạo 100% theo Prompt';
+        } else {
+          strengthDesc.textContent = 'Rất sát mặt mẫu: Khóa chặt các nét mặt từ ảnh tham chiếu';
+        }
       } else {
-        strengthDesc.textContent = 'Biến đổi mạnh: Ưu tiên 90% theo Prompt, chỉ lấy cảm hứng từ ảnh mẫu';
+        if (val < 0.50) {
+          strengthDesc.textContent = 'Giữ nguyên 80% bố cục ảnh mẫu';
+        } else {
+          strengthDesc.textContent = 'Đổi chi tiết mạnh theo Prompt trên nền bố cục ảnh mẫu';
+        }
       }
     }
   });
 }
 
-// Bộ từ điển thông minh tự động dịch tiếng Việt sang Tag tiếng Anh chuyên dụng cho Model SDXL
-function enhanceAndTranslatePrompt(text) {
-  let p = (text || '').trim();
-  if (!p) return p;
+// =========================================================================
+// CÔNG CỤ AI PHIÊN DỊCH & PHÂN TÍCH NGỮ NGHĨA TIẾNG VIỆT SÁT NHẤT CHO SDXL
+// =========================================================================
+let manualCompiledOverride = false;
 
-  const isVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(p);
-  if (!isVietnamese) return p;
-
-  let en = p.toLowerCase();
-  en = en.replace(/^(tạo ảnh|vẽ ảnh|hãy vẽ|hãy tạo|tạo cho tôi|vẽ cho tôi|hình ảnh|tạo 1 ảnh|vẽ 1 ảnh|vẽ một bức ảnh|tạo một bức ảnh)\s+/i, '');
-
-  const dict = [
-    [/người phụ nữ|phụ nữ|cô gái|cô em|gái xinh|baddie|em gái/g, 'beautiful woman, 1girl'],
-    [/người đàn ông|đàn ông|chàng trai|trai đẹp/g, 'handsome man, 1boy'],
-    [/châu á|người việt|việt nam/g, 'asian, vietnamese'],
-    [/không mặc gì|khỏa thân|nude|cởi hết|không quần áo|trần như nhộng|không mặc đồ|lộ hết/g, 'completely naked, nude, full body nude, explicit, bare skin, bare breasts, bare nipples, uncensored'],
-    [/đồ lót|nội y/g, 'sexy lingerie, lace underwear'],
-    [/bikini|áo tắm/g, 'sexy micro bikini'],
-    [/váy ngắn|chân váy/g, 'tight mini skirt'],
-    [/áo sơ mi/g, 'unbuttoned shirt'],
-    [/đang đứng ở biển|đang đứng biển|đứng ở biển|ở biển|bờ biển|bãi biển|biển/g, 'standing on a tropical sunny beach, ocean background, gentle sea waves, soft golden sand, outdoor natural lighting, full body shot'],
-    [/đang đứng|đứng/g, 'standing, full body standing pose, head to toe shot'],
-    [/đang ngồi|ngồi/g, 'sitting, seated, full body shot'],
-    [/đang nằm|nằm/g, 'lying down, reclining'],
-    [/quỳ|đang quỳ/g, 'kneeling pose'],
-    [/nhìn vào ống kính|nhìn thẳng/g, 'looking at camera'],
-    [/tự sướng|selfie/g, 'mirror selfie, direct flash'],
-    [/nhà vệ sinh công cộng|nhà vệ sinh|toilet/g, 'in a public restroom, ceramic wall tiles, toilet stall, realistic bathroom lighting'],
-    [/phòng ngủ|giường/g, 'in a cozy bedroom, on the bed, warm indoor lighting'],
-    [/phòng tắm|bồn tắm/g, 'in a luxurious bathroom, bathtub'],
-    [/khách sạn/g, 'in a luxury hotel room'],
-    [/đường phố|ngoài đường/g, 'on a city street at night'],
-    [/ảnh thật|chân thực|như thật|siêu thực/g, 'photorealistic, raw photo, realistic skin texture, 8k uhd, soft natural lighting']
-  ];
-
-  dict.forEach(([rgx, repl]) => {
-    en = en.replace(rgx, repl);
-  });
-
-  if (!en.includes('photorealistic') && !en.includes('photo')) {
-    en = `${en}, photorealistic, raw photo, ultra detailed skin texture, realistic natural lighting, 8k uhd`;
+async function googleNeuralTranslateViToEn(text) {
+  const clean = (text || '').trim();
+  if (!clean) return '';
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=vi&tl=en&dt=t&q=${encodeURIComponent(clean)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Translate HTTP ' + res.status);
+    const data = await res.json();
+    return (data[0] || []).map(part => part[0] || '').join('').trim();
+  } catch {
+    return clean;
   }
-  return en;
 }
+
+async function smartCompileVietnamesePrompt(rawText, modelId = '') {
+  const raw = (rawText || '').trim();
+  if (!raw) return { compiledPrompt: '', notes: [], detectedMode: 'face' };
+
+  const lowerRaw = raw.toLowerCase();
+  const notes = [];
+  let detectedMode = currentRefMode;
+
+  // 1. Nhận diện mệnh lệnh điều khiển ("giữ khuôn mặt còn dáng người tự sáng tạo")
+  if (/(giữ\s*(nguyên\s*)?(nét\s*|khuôn\s*)?mặt|lấy\s*mặt|dáng\s*(người)?\s*(thì\s*)?tự\s*(do\s*)?sáng\s*tạo|đổi\s*dáng|đổi\s*tư\s*thế)/i.test(lowerRaw)) {
+    detectedMode = 'face';
+    notes.push('👤 Tự động bật IP-Adapter Face: Giữ mặt & Tự sáng tạo dáng mới');
+    // Đồng bộ nút trên UI
+    document.querySelectorAll('#refModeGrid .ref-mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === 'face');
+    });
+    currentRefMode = 'face';
+  }
+
+  // 2. Cắt bỏ các câu mệnh lệnh thừa để tránh làm nhiễu bộ đọc ảnh CLIP
+  let cleaned = raw;
+  const metaPatterns = [
+    /^(hãy\s*)?(tạo|vẽ|làm|sinh|thiết kế)\s*(cho\s*(tôi|tao|mình|anh|em)\s*)?(một\s*|1\s*)?(bức\s*|tấm\s*)?(hình\s*ảnh|ảnh|hình)\s*(về\s*|của\s*)?/i,
+    /(,|\.|;|\s)*(nhưng\s*|mà\s*)?(vẫn\s*)?(giữ\s*(nguyên\s*)?(nét\s*|khuôn\s*)?mặt(\s*ảnh\s*mẫu)?)\s*(còn\s*|và\s*)?(dáng\s*(người|đứng|ngồi)?|tư\s*thế|body|cơ\s*thể)?\s*(thì\s*)?(tự\s*(do\s*)?sáng\s*tạo|tự\s*vẽ|tùy\s*ý|khác\s*đi|mới\s*hoàn\s*toàn)[^,.]*/gi,
+    /(,|\.|;|\s)*(dáng\s*(người)?|tư\s*thế)\s*(thì\s*)?(tự\s*(do\s*)?sáng\s*tạo|tùy\s*ý)[^,.]*/gi,
+    /(,|\.|;|\s)*(giữ\s*(nguyên\s*)?(nét\s*|khuôn\s*)?mặt(\s*của\s*cô\s*gái|\s*ảnh\s*mẫu)?)[^,.]*/gi
+  ];
+  metaPatterns.forEach(pat => {
+    cleaned = cleaned.replace(pat, ' ');
+  });
+  cleaned = cleaned.replace(/\s+/g, ' ').replace(/^[,\s.;-]+|[,\s.;-]+$/g, '');
+  if (!cleaned) cleaned = raw;
+
+  // 3. Dịch Neural toàn bộ câu tiếng Việt sang tiếng Anh chuẩn
+  const isVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(cleaned);
+  let enBase = isVietnamese ? await googleNeuralTranslateViToEn(cleaned) : cleaned;
+
+  // 4. Bổ sung các thẻ trọng số Studio (Weighted Tags) sát nghĩa nhất
+  const boostTags = [];
+
+  if (/(phụ nữ|cô gái|cô em|gái xinh|em gái|thiếu nữ|woman|girl|female)/i.test(lowerRaw)) {
+    if (!enBase.toLowerCase().includes('1girl')) {
+      boostTags.push('1girl, gorgeous young woman');
+    }
+  }
+
+  // Khỏa thân / 18+ Uncensored
+  if (/(không mặc gì|khỏa thân|nude|cởi hết|trần truồng|trần như nhộng|không quần áo|lộ ngực|lộ vú|lộ hàng|cởi truồng|naked|wearing nothing|topless)/i.test(lowerRaw)) {
+    boostTags.push('(completely naked, full body nude:1.35), (uncensored, explicit anatomy, bare breasts, exposed nipples, bare skin:1.25)');
+    notes.push('🔥 Uncensored 18+: Kích hoạt thẻ Full Nude & Giải phẫu chi tiết');
+  } else if (/(bikini|đồ bơi|áo tắm)/i.test(lowerRaw)) {
+    boostTags.push('(sexy micro bikini, wet skin:1.2)');
+  } else if (/(nội y|đồ lót|lingerie)/i.test(lowerRaw)) {
+    boostTags.push('(erotic lace lingerie:1.2)');
+  }
+
+  // Tư thế (Pose) & Khóa khung hình Toàn thân (Full Body)
+  if (/(quỳ gối|đang quỳ|quỳ trên sàn|quỳ xuống|kneel)/i.test(lowerRaw)) {
+    boostTags.push('(kneeling on both knees on the floor, full body kneeling pose, wide angle shot from head to knees:1.35)');
+    notes.push('📐 Tư thế: Quỳ gối toàn thân (Góc máy rộng)');
+  } else if (/(đang đứng|đứng thẳng|đứng tạo dáng|standing)/i.test(lowerRaw)) {
+    boostTags.push('(standing pose, full body shot from head to toe, wide angle view, showing legs and body:1.3)');
+    notes.push('📐 Tư thế: Đứng toàn thân từ đầu đến chân');
+  } else if (/(ngồi xổm|squat)/i.test(lowerRaw)) {
+    boostTags.push('(squatting pose, full body shot, wide angle:1.3)');
+    notes.push('📐 Tư thế: Ngồi xổm toàn thân');
+  } else if (/(đang ngồi|ngồi trên|ngồi bệt|sitting|seated)/i.test(lowerRaw)) {
+    boostTags.push('(sitting pose, full body shot, wide angle view showing whole body:1.3)');
+    notes.push('📐 Tư thế: Ngồi toàn thân');
+  } else if (/(đang nằm|nằm ngửa|nằm sấp|nằm trên|lying|reclining)/i.test(lowerRaw)) {
+    boostTags.push('(lying down pose, full body view, wide angle:1.25)');
+    notes.push('📐 Tư thế: Nằm toàn thân');
+  } else if (/(chổng mông|nhìn từ phía sau|quay lưng|doggy|from behind)/i.test(lowerRaw)) {
+    boostTags.push('(from behind, back view, arched back, looking back over shoulder, full body:1.3)');
+    notes.push('📐 Góc nhìn: Từ phía sau (Back view)');
+  }
+
+  if (/(toàn thân|full body|cả người)/i.test(lowerRaw) && !boostTags.some(t => t.includes('full body'))) {
+    boostTags.push('(full body shot from head to toe, wide angle view:1.3)');
+  }
+
+  if (/(dang chân|mở rộng chân|banh chân|spread legs)/i.test(lowerRaw)) {
+    boostTags.push('(spread legs, explicit pose:1.3)');
+  }
+
+  // Bối cảnh
+  if (/(nhà vệ sinh|toilet|phòng vệ sinh|wc|restroom)/i.test(lowerRaw)) {
+    boostTags.push('inside a public restroom stall, ceramic tile walls, toilet background, realistic indoor bathroom lighting');
+  } else if (/(bãi biển|bờ biển|ở biển|ngoài biển|beach)/i.test(lowerRaw)) {
+    boostTags.push('on a sunny tropical beach, ocean waves in background, wet golden sand, bright natural sunlight');
+  } else if (/(phòng tắm|nhà tắm|bồn tắm|bathroom|shower)/i.test(lowerRaw)) {
+    boostTags.push('inside a luxury modern bathroom, wet skin, warm lighting');
+  } else if (/(phòng ngủ|trên giường|khách sạn|bedroom|hotel)/i.test(lowerRaw)) {
+    boostTags.push('inside a cozy luxury hotel bedroom, messy bedsheets, cinematic warm lamp lighting');
+  }
+
+  // Tiền tố chuẩn cho model CyberRealistic Pony V6.5
+  let prefix = '';
+  if ((modelId || '').toLowerCase().includes('pony')) {
+    prefix = 'score_9, score_8_up, score_7_up, realistic, photorealistic, ';
+    notes.push('⚡ Kích hoạt mã điểm tối đa (score_9) cho CyberRealistic Pony');
+  }
+
+  const qualitySuffix = 'masterpiece, raw photo, photorealistic, 8k uhd, dslr, ultra detailed skin texture, realistic pores, natural lighting';
+  const compiledPrompt = prefix + [enBase, ...boostTags, qualitySuffix].filter(Boolean).join(', ');
+
+  return { compiledPrompt, notes, detectedMode };
+}
+
+function showCompiledPromptUI(compiledPrompt, notes = []) {
+  const box = $('#compiledPromptBox');
+  const inputEl = $('#compiledPromptInput');
+  const notesEl = $('#compiledNotes');
+  if (!box || !inputEl) return;
+  box.style.display = 'flex';
+  inputEl.value = compiledPrompt;
+  if (notesEl) {
+    notesEl.innerHTML = (notes || []).map(n => `<span class="compiled-note-badge">${esc(n)}</span>`).join('');
+  }
+}
+
+const aiTranslateBtn = $('#aiTranslateBtn');
+if (aiTranslateBtn) {
+  aiTranslateBtn.onclick = async () => {
+    const raw = ($('#imgPrompt')?.value || '').trim();
+    if (!raw) {
+      window.alert('Hãy nhập mô tả bằng tiếng Việt vào ô Prompt trước!');
+      return;
+    }
+    aiTranslateBtn.disabled = true;
+    aiTranslateBtn.innerHTML = '<span>⏳ Đang phân tích & dịch...</span>';
+    try {
+      const modelId = $('#imgModelSelect')?.value || '';
+      const res = await smartCompileVietnamesePrompt(raw, modelId);
+      manualCompiledOverride = false;
+      showCompiledPromptUI(res.compiledPrompt, res.notes);
+    } finally {
+      aiTranslateBtn.disabled = false;
+      aiTranslateBtn.innerHTML = '<span>🪄 Dịch & Tối Ưu Prompt</span>';
+    }
+  };
+}
+
+const compiledPromptInputEl = $('#compiledPromptInput');
+if (compiledPromptInputEl) {
+  compiledPromptInputEl.addEventListener('input', () => {
+    manualCompiledOverride = true;
+  });
+}
+const imgPromptEl = $('#imgPrompt');
+if (imgPromptEl) {
+  imgPromptEl.addEventListener('input', () => {
+    manualCompiledOverride = false;
+  });
+}
+
+const clearCompiledBtn = $('#clearCompiledBtn');
+if (clearCompiledBtn) {
+  clearCompiledBtn.onclick = () => {
+    manualCompiledOverride = false;
+    const box = $('#compiledPromptBox');
+    if (box) box.style.display = 'none';
+  };
+}
+
+// Bắt sự kiện các nút Thẻ Gợi Ý Nhanh (Quick Tags)
+document.querySelectorAll('#quickTagsBar .q-tag').forEach(tagBtn => {
+  tagBtn.addEventListener('click', async () => {
+    const promptEl = $('#imgPrompt');
+    if (!promptEl) return;
+    const phrase = tagBtn.dataset.tag || '';
+    const curr = promptEl.value.trim();
+    if (!curr.toLowerCase().includes(phrase.toLowerCase())) {
+      promptEl.value = curr ? `${curr}, ${phrase}` : phrase;
+    }
+    const modelId = $('#imgModelSelect')?.value || '';
+    const res = await smartCompileVietnamesePrompt(promptEl.value, modelId);
+    showCompiledPromptUI(res.compiledPrompt, res.notes);
+  });
+});
 
 // Cập nhật giá trị khuyên dùng khi đổi model
 const modelSelectEl = $('#imgModelSelect');
 if (modelSelectEl) {
-  modelSelectEl.addEventListener('change', () => {
+  modelSelectEl.addEventListener('change', async () => {
     const m = modelSelectEl.value.toLowerCase();
-    if (m.includes('schnell')) {
-      stepsInput.value = 4;
-      stepsVal.textContent = '4';
-      cfgInput.value = 0.0;
-      cfgVal.textContent = '0.0';
-    } else if (m.includes('dev')) {
-      stepsInput.value = 25;
-      stepsVal.textContent = '25';
-      cfgInput.value = 3.5;
-      cfgVal.textContent = '3.5';
+    if (m.includes('pony')) {
+      stepsInput.value = 28;
+      stepsVal.textContent = '28';
+      cfgInput.value = 6.0;
+      cfgVal.textContent = '6.0';
     } else {
       stepsInput.value = 25;
       stepsVal.textContent = '25';
       cfgInput.value = 6.5;
       cfgVal.textContent = '6.5';
+    }
+    const raw = ($('#imgPrompt')?.value || '').trim();
+    if (raw && $('#compiledPromptBox')?.style.display !== 'none') {
+      const res = await smartCompileVietnamesePrompt(raw, modelSelectEl.value);
+      showCompiledPromptUI(res.compiledPrompt, res.notes);
     }
   });
 }
@@ -1029,18 +1208,30 @@ if (imageGenForm) {
 
     try {
       const token = await accessToken();
-      const optimizedPrompt = enhanceAndTranslatePrompt(promptText);
+      const selectedModel = $('#imgModelSelect').value;
+
+      // Tự động biên dịch & phân tích ngữ nghĩa tiếng Việt sát nghĩa nhất
+      const compiledRes = await smartCompileVietnamesePrompt(promptText, selectedModel);
+      const customBoxInput = $('#compiledPromptInput');
+      const finalPrompt = (manualCompiledOverride && customBoxInput && customBoxInput.value.trim())
+        ? customBoxInput.value.trim()
+        : compiledRes.compiledPrompt;
+
+      showCompiledPromptUI(finalPrompt, compiledRes.notes);
+
       const payload = {
-        prompt: optimizedPrompt,
+        prompt: finalPrompt,
+        raw_prompt: promptText,
         negative_prompt: ($('#imgNegativePrompt').value || '').trim(),
         width: currentWidth,
         height: currentHeight,
         steps: Number($('#imgSteps').value) || 25,
         guidance_scale: Number($('#imgGuidance').value) || 6.5,
         seed: Number($('#imgSeed').value),
-        model_id: $('#imgModelSelect').value,
+        model_id: selectedModel,
         init_image: referenceImage || null,
-        strength: referenceImage ? Number($('#refStrength')?.value || 0.70) : null,
+        strength: referenceImage ? Number($('#refStrength')?.value || 0.65) : null,
+        ref_mode: currentRefMode,
         num_images: currentNumImages,
       };
 

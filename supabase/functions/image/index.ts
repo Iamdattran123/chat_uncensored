@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
 
   const payload = {
     prompt: prompt,
+    raw_prompt: body.raw_prompt || prompt,
     negative_prompt: body.negative_prompt || "",
     width: Number(body.width) || 1024,
     height: Number(body.height) || 1024,
@@ -100,7 +101,8 @@ Deno.serve(async (req) => {
     seed: body.seed !== undefined ? Number(body.seed) : -1,
     model_id: body.model_id || "SG161222/RealVisXL_V5.0",
     init_image: body.init_image || body.image || null,
-    strength: body.strength !== undefined ? Number(body.strength) : 0.70,
+    strength: body.strength !== undefined ? Number(body.strength) : 0.65,
+    ref_mode: body.ref_mode || "face",
     num_images: Math.min(Math.max(1, Number(body.num_images) || 1), 4),
   };
 

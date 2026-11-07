@@ -116,6 +116,29 @@
 .ref-guidance-tip{background:#1f1c2b;border:1px solid #7c3aed40;border-radius:8px;padding:8px 10px;font-size:11px;color:#d8b4fe;line-height:1.45;margin-top:8px;display:flex;align-items:flex-start;gap:6px}
 .ref-guidance-tip .tip-icon{font-size:13px;flex-shrink:0}
 
+/* Reference Mode Switcher & Prompt Translator Tools */
+.ref-mode-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.ref-mode-btn{background:#232329;border:1px solid #383842;border-radius:7px;color:#b8b8c6;font-size:11px;font-weight:600;padding:7px 6px;cursor:pointer;text-align:center;transition:all .15s}
+.ref-mode-btn:hover{border-color:#a855f7;color:#fff}
+.ref-mode-btn.active{background:#321e4a;border-color:#a855f7;color:#f3e8ff;box-shadow:0 0 8px #a855f730}
+
+.prompt-label-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ai-translate-btn{background:linear-gradient(135deg,#7c3aed,#db2777);border:0;border-radius:7px;color:#fff;font-size:11px;font-weight:650;padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:4px;box-shadow:0 2px 10px #a855f735;transition:all .15s}
+.ai-translate-btn:hover{filter:brightness(1.15);transform:translateY(-1px)}
+.ai-translate-btn:disabled{opacity:.6;cursor:wait}
+
+.quick-tags-bar{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.q-tag{background:#23232a;border:1px solid #363640;border-radius:6px;color:#c4c4d0;font-size:11px;padding:4px 8px;cursor:pointer;transition:all .14s}
+.q-tag:hover{background:#321e4a;border-color:#a855f7;color:#f3e8ff}
+
+.compiled-prompt-box{background:#181622;border:1px solid #8b5cf660;border-radius:9px;padding:9px 10px;margin-top:6px;display:flex;flex-direction:column;gap:6px}
+.compiled-header{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#d8b4fe}
+.compiled-close-btn{background:#2d263e;border:1px solid #6d28d960;border-radius:5px;color:#c4b5fd;font-size:10px;padding:2px 7px;cursor:pointer}
+.compiled-close-btn:hover{background:#3b3154;color:#fff}
+#compiledPromptInput{background:#111018;border:1px solid #3b3354;border-radius:6px;color:#e9d5ff;font-size:11.5px;padding:7px 9px;line-height:1.45;resize:vertical}
+.compiled-notes{display:flex;flex-wrap:wrap;gap:5px}
+.compiled-note-badge{background:#2e1065;border:1px solid #7c3aed60;color:#e9d5ff;font-size:10.5px;padding:2px 8px;border-radius:5px}
+
 /* Accordion Nâng cao */
 .advanced-settings{background:#1c1c1f;border:1px solid #323238;border-radius:10px;padding:10px 12px}
 .advanced-settings summary{font-size:12px;font-weight:600;color:#b4b4bf;cursor:pointer;outline:none;user-select:none}

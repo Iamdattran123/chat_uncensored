@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Khung Chat & Studio Tạo Ảnh — Local AI</title><link rel="stylesheet" href="./styles.css?v=2.2">
+<title>Khung Chat & Studio Tạo Ảnh — Local AI</title><link rel="stylesheet" href="./styles.css?v=3.0">
 </head>
 <body>
 <div class="app">
@@ -98,13 +98,13 @@
           <form id="imageGenForm" class="studio-form">
             <!-- Chọn Model -->
             <div class="form-group">
-              <label for="imgModelSelect">Model tạo ảnh</label>
+              <label for="imgModelSelect">Model tạo ảnh (Đã chọn lọc Top 4 Mã Nguồn Mở Mạnh Nhất)</label>
               <div class="select-wrap">
                 <select id="imgModelSelect">
-                  <option value="SG161222/RealVisXL_V5.0" selected>👑 RealVisXL V5.0 (Ảnh thật / Chân dung & Toàn thân siêu nét / Uncensored)</option>
-                  <option value="RunDiffusion/Juggernaut-XL-v9">🎬 Juggernaut XL V9 (Điện ảnh / Ánh sáng chân thực đỉnh cao)</option>
-                  <option value="yodayo-ai/clandestine-xl-1.0">🔥 Clandestine XL (Chuyên sâu Uncensored 18+ / Mọi tư thế & 2.5D)</option>
-                  <option value="cagliostrolab/animagine-xl-3.1">🌸 Animagine XL 3.1 (Anime & Manga chi tiết sắc nét)</option>
+                  <option value="SG161222/RealVisXL_V5.0" selected>👑 RealVisXL V5.0 (Top 1 Ảnh Thật / Da Thịt & Body 8K / Uncensored)</option>
+                  <option value="misri/cyberrealisticPony_v65">🔥 CyberRealistic Pony V6.5 (Vua Tư Thế Khó 18+ / Siêu Thực Nude & NSFW)</option>
+                  <option value="RunDiffusion/Juggernaut-XL-v9">🎬 Juggernaut XL V9 (Điện Ảnh / Ánh Sáng & Bối Cảnh Ngang Tầm Seedream)</option>
+                  <option value="fluently/Fluently-XL-Final">💎 Fluently XL Final (Giải Phẫu Cơ Thể, Bàn Tay & Góc Máy Tự Nhiên Nhất)</option>
                 </select>
               </div>
             </div>
@@ -147,7 +147,7 @@
               </div>
             </div>
 
-            <!-- Ảnh mẫu tham chiếu (Image Reference / Face Guidance) -->
+            <!-- Ảnh mẫu tham chiếu (Image Reference / IP-Adapter Face Guidance) -->
             <div class="form-group">
               <div class="ref-header">
                 <label>Ảnh mẫu tham chiếu <small class="text-muted">(Khuôn mặt, dáng người...)</small></label>
@@ -171,35 +171,64 @@
                 <div class="ref-card">
                   <img id="refPreviewImg" src="" alt="Ảnh mẫu">
                   <div class="ref-info">
-                    <span class="ref-name">Đã nhận diện ảnh mẫu</span>
-                    <small class="ref-hint">AI sẽ giữ nét mặt & phong thái này để sáng tạo ảnh mới</small>
+                    <span class="ref-name">Đã khóa nhận diện khuôn mặt</span>
+                    <small class="ref-hint" id="refModeHint">IP-Adapter Face: Giữ nét mặt & Tự do sáng tạo dáng người mới theo Prompt</small>
                   </div>
                   <button type="button" class="remove-ref-btn" id="removeRefBtn" title="Gỡ ảnh mẫu">×</button>
                 </div>
 
-                <!-- Slider độ bám ảnh mẫu -->
-                <div class="ref-strength-box">
-                  <div class="strength-labels">
-                    <span>Mức độ bám ảnh mẫu: <b id="strengthVal">70%</b></span>
-                    <small id="strengthDesc">Chuẩn nhất: Đổi tư thế, trang phục & bối cảnh theo Prompt, vẫn giữ nét mặt</small>
-                  </div>
-                  <input type="range" id="refStrength" min="0.3" max="0.9" value="0.70" step="0.05">
+                <!-- Chế độ xử lý ảnh mẫu -->
+                <div class="ref-mode-grid" id="refModeGrid">
+                  <button type="button" class="ref-mode-btn active" data-mode="face">👤 Giữ Mặt + Tự Tạo Dáng Mới</button>
+                  <button type="button" class="ref-mode-btn" data-mode="pose">🖼️ Giữ Dáng & Bố Cục Ảnh Gốc</button>
                 </div>
 
-                <div class="ref-guidance-tip">
-                  <span class="tip-icon">💡</span>
-                  <span><b>Tạo toàn thân:</b> Nếu ảnh mẫu là cận mặt (selfie), AI sẽ bám theo khung hình khuôn mặt. Để vẽ dáng <b>toàn thân (đứng/ngồi ở biển, phòng tắm...)</b>, hãy bấm <b>Gỡ ảnh mẫu</b> để AI tạo tự do theo Prompt hoặc kéo thanh bám ảnh mẫu lên 80%!</span>
+                <!-- Slider độ bám khuôn mặt / ảnh mẫu -->
+                <div class="ref-strength-box">
+                  <div class="strength-labels">
+                    <span>Độ giống khuôn mặt: <b id="strengthVal">65%</b></span>
+                    <small id="strengthDesc">🔥 Chuẩn nhất: Giữ nét mặt ảnh mẫu, còn tư thế (quỳ, đứng, ngồi...) sáng tạo 100% theo Prompt</small>
+                  </div>
+                  <input type="range" id="refStrength" min="0.30" max="0.90" value="0.65" step="0.05">
                 </div>
               </div>
             </div>
 
-            <!-- Prompt chính -->
+            <!-- Prompt chính + Công cụ Phiên Dịch Ngôn Ngữ Tiếng Việt Nâng Cao -->
             <div class="form-group">
-              <label for="imgPrompt">Mô tả hình ảnh (Prompt)</label>
-              <textarea id="imgPrompt" rows="4" placeholder="Nhập mô tả chi tiết: nhân vật, trang phục, góc máy, ánh sáng, bối cảnh, tư thế... (Hỗ trợ cả Tiếng Việt và Tiếng Anh)" required></textarea>
+              <div class="prompt-label-row">
+                <label for="imgPrompt">Mô tả hình ảnh (Nhập Tiếng Việt tự nhiên)</label>
+                <button type="button" class="ai-translate-btn" id="aiTranslateBtn" title="Phân tích ngữ nghĩa tiếng Việt & chuyển thành Prompt chuẩn Studio">
+                  <span>🪄 Dịch & Tối Ưu Prompt</span>
+                </button>
+              </div>
+              <textarea id="imgPrompt" rows="3" placeholder="VD: tạo hình ảnh người phụ nữ đang quỳ gối trong nhà vệ sinh không mặc gì, giữ khuôn mặt còn dáng người tự sáng tạo..." required></textarea>
+              
+              <!-- Thẻ gắn nhanh tư thế & bối cảnh -->
+              <div class="quick-tags-bar" id="quickTagsBar">
+                <button type="button" class="q-tag" data-tag="toàn thân từ đầu đến chân">+ Toàn thân</button>
+                <button type="button" class="q-tag" data-tag="không mặc gì, khỏa thân hoàn toàn">+ Khỏa thân 18+</button>
+                <button type="button" class="q-tag" data-tag="đang quỳ gối trên sàn">+ Đang quỳ gối</button>
+                <button type="button" class="q-tag" data-tag="đang đứng tạo dáng">+ Đang đứng</button>
+                <button type="button" class="q-tag" data-tag="đang ngồi">+ Đang ngồi</button>
+                <button type="button" class="q-tag" data-tag="nằm ngửa trên giường">+ Nằm ngửa</button>
+                <button type="button" class="q-tag" data-tag="ở bãi biển nắng vàng">+ Bãi biển</button>
+                <button type="button" class="q-tag" data-tag="trong nhà vệ sinh công cộng">+ Nhà vệ sinh</button>
+              </div>
+
+              <!-- Khung hiển thị Prompt Tiếng Anh chuẩn AI sau khi biên dịch -->
+              <div class="compiled-prompt-box" id="compiledPromptBox" style="display:none;">
+                <div class="compiled-header">
+                  <span>🎯 <b>Prompt AI Đã Phiên Dịch (Chuẩn SDXL Studio):</b></span>
+                  <button type="button" class="compiled-close-btn" id="clearCompiledBtn" title="Đóng và dùng tự động">Tự động</button>
+                </div>
+                <textarea id="compiledPromptInput" rows="3" placeholder="Bản dịch tiếng Anh chuyên sâu dành cho GPU..."></textarea>
+                <div class="compiled-notes" id="compiledNotes"></div>
+              </div>
+
               <div class="prompt-hint">
                 <span class="magic-icon">✨</span>
-                <span>Hệ thống tự động dịch tiếng Việt sang thẻ tiếng Anh chuẩn Studio (Full body, Uncensored, Lighting...)</span>
+                <span><b>AI Ngữ Nghĩa Tiếng Việt:</b> Tự động lọc bỏ câu mệnh lệnh thừa, dịch sát nghĩa từng từ và gắn thẻ giải phẫu 8K.</span>
               </div>
             </div>
 
@@ -301,5 +330,5 @@
 <!-- Modal Thông Tin Cấu Hình -->
 <div class="overlay" id="overlay"><section class="modal"><button class="modal-x" id="closeModal">×</button><div class="modal-icon">⌘</div><h2>Cấu hình Kết nối AI</h2><p class="modal-lead">Inference được phân luồng qua Supabase Edge Functions. Token Modal bảo mật tuyệt đối ở máy chủ.</p><div class="config-state"><span class="state-indicator"></span><span id="syncLabel">Đăng nhập để đồng bộ lịch sử riêng.</span></div><div class="code-box"><div><span>Trò chuyện</span><code>Supabase Edge Function: /chat</code></div><div><span>Tạo ảnh Uncensored</span><code>Supabase Edge Function: /image (Độc quyền datviphero@)</code></div><div><span>GPU Inference</span><code>Modal Serverless GPU (Scale-to-zero)</code></div></div><p class="modal-foot">Xem <b>README.md</b> để cập nhật cấu hình secrets.</p><button class="done-btn" id="doneBtn">Đã hiểu</button></section></div>
 
-<script src="./config.js?v=2.2"></script><script src="./app.js?v=2.2"></script>
+<script src="./config.js?v=3.0"></script><script src="./app.js?v=3.0"></script>
 </body></html>
