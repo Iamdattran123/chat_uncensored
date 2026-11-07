@@ -6,9 +6,9 @@ import torch
 import modal
 from PIL import Image
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
-# Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu
+# Modal App dành riêng cho Sinh Ảnh Uncensored Tối Ưu (Hỗ trợ Batch nhiều ảnh)
 app = modal.App("private-image-studio")
 
 # Volume lưu trữ weights model vĩnh viễn - Mount vào thư mục riêng /weights
@@ -16,7 +16,7 @@ weights_volume = modal.Volume.from_name("image-weights-cache", create_if_missing
 
 MODEL_NAME = "SG161222/RealVisXL_V5.0"
 
-# Image môi trường PyTorch + Diffusers tối tân nhất
+# Image môi trường PyTorch + Diffusers tối tân nhất (đã có libgl1 & libglib)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libgl1", "libglib2.0-0")
@@ -33,7 +33,7 @@ image = (
         "invisible-watermark>=0.2.0",
         "huggingface_hub>=0.24.0"
     )
-    .env({"HF_HOME": "/weights"})  # Trỏ toàn bộ cache HuggingFace vào Volume /weights
+    .env({"HF_HOME": "/weights"})
 )
 
 class GenerateRequest(BaseModel):
@@ -46,17 +46,18 @@ class GenerateRequest(BaseModel):
     seed: Optional[int] = -1
     model_id: Optional[str] = "SG161222/RealVisXL_V5.0"
     init_image: Optional[str] = None
-    strength: Optional[float] = 0.65
+    strength: Optional[float] = 0.70
+    num_images: Optional[int] = 1  # Tùy chọn tạo 1, 2, 3 hoặc 4 ảnh cùng lúc
 
 @app.cls(
     image=image,
-    gpu="A10G",  # Dùng A10G (24GB VRAM): Nguồn cung cực lớn, khởi động tức thì, không bị nghẽn capacity
-    volumes={"/weights": weights_volume},  # Mount volume vào đường dẫn sạch /weights (tránh lỗi non-empty path)
+    gpu="A10G",
+    volumes={"/weights": weights_volume},
     secrets=[modal.Secret.from_name("model-auth")],
     timeout=600,
     min_containers=0,
     max_containers=1,
-    scaledown_window=240,  # 4 phút không dùng tự scale về 0 để bảo vệ ví tiền
+    scaledown_window=240,
 )
 class ImageStudio:
     @modal.enter()
@@ -87,24 +88,50 @@ class ImageStudio:
         print("[ImageStudio] Pipeline khởi tạo thành công! Sẵn sàng tạo ảnh.")
 
     def load_model_if_needed(self, target_model: str):
-        if self.current_model_id == target_model:
+        if self.current_model_id == target_model and self.pipe is not None:
             return
         from diffusers import AutoPipelineForText2Image
-        print(f"[ImageStudio] Chuyển đổi model sang: {target_model}...")
-        self.pipe = AutoPipelineForText2Image.from_pretrained(
-            target_model,
-            torch_dtype=torch.float16,
-            variant="fp16",
-            use_safetensors=True,
-        )
-        if hasattr(self.pipe, "safety_checker"):
-            self.pipe.safety_checker = None
-        if hasattr(self.pipe, "requires_safety_checker"):
-            self.pipe.requires_safety_checker = False
-        self.pipe.to("cuda")
-        if hasattr(self.pipe, "enable_vae_tiling"):
-            self.pipe.enable_vae_tiling()
-        self.current_model_id = target_model
+        from fastapi import HTTPException
+
+        print(f"[ImageStudio] Đang chuyển đổi model sang: {target_model}...")
+        hf_token = os.environ.get("HF_TOKEN") or None
+        
+        load_kwargs = {
+            "torch_dtype": torch.float16,
+            "variant": "fp16",
+            "use_safetensors": True,
+        }
+        if hf_token:
+            load_kwargs["token"] = hf_token
+
+        try:
+            new_pipe = AutoPipelineForText2Image.from_pretrained(target_model, **load_kwargs)
+            if hasattr(new_pipe, "safety_checker"):
+                new_pipe.safety_checker = None
+            if hasattr(new_pipe, "requires_safety_checker"):
+                new_pipe.requires_safety_checker = False
+            new_pipe.to("cuda")
+            if hasattr(new_pipe, "enable_vae_tiling"):
+                new_pipe.enable_vae_tiling()
+
+            self.pipe = new_pipe
+            self.current_model_id = target_model
+            print(f"[ImageStudio] Nạp thành công model: {target_model}")
+        except Exception as e:
+            err_str = str(e)
+            print(f"[ImageStudio] Lỗi khi nạp model '{target_model}': {err_str}")
+            if "GatedRepoError" in err_str or "401" in err_str:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model '{target_model}' bị khóa bản quyền (Gated Repo 401 trên HuggingFace). Hãy chọn RealVisXL V5.0 hoặc Juggernaut XL V9 để tạo ảnh không giới hạn!"
+                )
+            if self.pipe is not None:
+                print(f"[ImageStudio] Vẫn giữ nguyên model đang chạy: {self.current_model_id}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Không thể tải model '{target_model}': {err_str[:120]}. Vui lòng thử lại với RealVisXL V5.0."
+                )
+            raise HTTPException(status_code=500, detail=f"Lỗi khởi tạo model: {err_str[:150]}")
 
     @modal.fastapi_endpoint(method="POST")
     def generate(self, req: GenerateRequest):
@@ -113,11 +140,13 @@ class ImageStudio:
         model_id = req.model_id or MODEL_NAME
         self.load_model_if_needed(model_id)
 
+        # Xử lý số lượng ảnh cần tạo (1 đến 4 ảnh)
+        num_images = max(1, min(req.num_images or 1, 4))
+
         if req.seed is None or req.seed < 0:
-            seed = torch.randint(0, 2**32 - 1, (1,)).item()
+            base_seed = torch.randint(0, 2**32 - 10, (1,)).item()
         else:
-            seed = int(req.seed)
-        generator = torch.Generator(device="cuda").manual_seed(seed)
+            base_seed = int(req.seed)
 
         width = (req.width // 8) * 8
         height = (req.height // 8) * 8
@@ -127,6 +156,11 @@ class ImageStudio:
         if "schnell" in model_id.lower():
             steps = min(steps, 6)
             guidance = 0.0
+
+        # Chuẩn bị pipeline Img2Img nếu có ảnh mẫu
+        img2img_pipe = None
+        ref_image = None
+        strength = 0.70
 
         if req.init_image:
             print("[ImageStudio] Kích hoạt chế độ Image-to-Image theo ảnh mẫu...")
@@ -144,48 +178,59 @@ class ImageStudio:
             img_bytes = base64.b64decode(raw_base64)
             ref_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             ref_image = ref_image.resize((width, height), Image.Resampling.LANCZOS)
+            strength = max(0.15, min(req.strength if req.strength is not None else 0.70, 0.95))
 
-            strength = max(0.15, min(req.strength if req.strength is not None else 0.65, 0.95))
+        generated_images: List[str] = []
+        seeds_used: List[int] = []
 
-            gen_kwargs = {
-                "prompt": req.prompt,
-                "image": ref_image,
-                "strength": strength,
-                "num_inference_steps": steps,
-                "guidance_scale": guidance,
-                "generator": generator,
-            }
-            if "flux" not in model_id.lower() and req.negative_prompt:
-                gen_kwargs["negative_prompt"] = req.negative_prompt
+        # Sinh từng ảnh với Seed khác nhau để tạo đa dạng góc nhìn & tư thế
+        for i in range(num_images):
+            curr_seed = base_seed + i
+            generator = torch.Generator(device="cuda").manual_seed(curr_seed)
 
-            output = img2img_pipe(**gen_kwargs)
-        else:
-            gen_kwargs = {
-                "prompt": req.prompt,
-                "width": width,
-                "height": height,
-                "num_inference_steps": steps,
-                "guidance_scale": guidance,
-                "generator": generator,
-            }
-            if "flux" not in model_id.lower() and req.negative_prompt:
-                gen_kwargs["negative_prompt"] = req.negative_prompt
+            if req.init_image and img2img_pipe and ref_image:
+                gen_kwargs = {
+                    "prompt": req.prompt,
+                    "image": ref_image,
+                    "strength": strength,
+                    "num_inference_steps": steps,
+                    "guidance_scale": guidance,
+                    "generator": generator,
+                }
+                if "flux" not in model_id.lower() and req.negative_prompt:
+                    gen_kwargs["negative_prompt"] = req.negative_prompt
+                output = img2img_pipe(**gen_kwargs)
+            else:
+                gen_kwargs = {
+                    "prompt": req.prompt,
+                    "width": width,
+                    "height": height,
+                    "num_inference_steps": steps,
+                    "guidance_scale": guidance,
+                    "generator": generator,
+                }
+                if "flux" not in model_id.lower() and req.negative_prompt:
+                    gen_kwargs["negative_prompt"] = req.negative_prompt
+                output = self.pipe(**gen_kwargs)
 
-            output = self.pipe(**gen_kwargs)
+            img = output.images[0]
+            buffered = io.BytesIO()
+            img.save(buffered, format="PNG", optimize=True)
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            data_url = f"data:image/png;base64,{img_str}"
 
-        image = output.images[0]
-
-        buffered = io.BytesIO()
-        image.save(buffered, format="PNG", optimize=True)
-        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        data_url = f"data:image/png;base64,{img_str}"
+            generated_images.append(data_url)
+            seeds_used.append(curr_seed)
 
         elapsed = round(time.time() - start_time, 2)
-        print(f"[ImageStudio] Đã tạo ảnh thành công ({width}x{height}, {steps} steps) trong {elapsed}s.")
+        print(f"[ImageStudio] Đã tạo thành công {num_images} ảnh ({width}x{height}, {steps} steps) trong {elapsed}s.")
 
         return {
-            "image": data_url,
-            "seed": seed,
+            "image": generated_images[0],
+            "images": generated_images,
+            "seeds": seeds_used,
+            "seed": base_seed,
+            "num_images": num_images,
             "elapsed_seconds": elapsed,
             "model": model_id,
             "width": width,
@@ -199,7 +244,6 @@ class ImageStudio:
     def health(self):
         return {"status": "ok", "current_model": self.current_model_id}
 
-# Hàm CLI tải sẵn model 1 lần duy nhất vào Volume /weights để không bao giờ bị timeout
 @app.function(
     image=image,
     volumes={"/weights": weights_volume},

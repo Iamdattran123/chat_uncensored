@@ -100,7 +100,8 @@ Deno.serve(async (req) => {
     seed: body.seed !== undefined ? Number(body.seed) : -1,
     model_id: body.model_id || "SG161222/RealVisXL_V5.0",
     init_image: body.init_image || body.image || null,
-    strength: body.strength !== undefined ? Number(body.strength) : 0.65,
+    strength: body.strength !== undefined ? Number(body.strength) : 0.70,
+    num_images: Math.min(Math.max(1, Number(body.num_images) || 1), 4),
   };
 
   try {

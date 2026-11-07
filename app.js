@@ -697,6 +697,16 @@ async function send(text){
 // STUDIO TẠO HÌNH ẢNH (IMAGE GENERATION STUDIO)
 // =========================================================================
 
+// Quản lý số lượng ảnh sinh ra (Batch Size)
+let currentNumImages = 1;
+document.querySelectorAll('#batchGrid .batch-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#batchGrid .batch-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentNumImages = Number(btn.dataset.n) || 1;
+  });
+});
+
 // Lựa chọn tỉ lệ khung hình (Aspect Ratio)
 document.querySelectorAll('.ratio-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -785,28 +795,28 @@ function enhanceAndTranslatePrompt(text) {
   if (!isVietnamese) return p;
 
   let en = p.toLowerCase();
-  en = en.replace(/^(tạo ảnh|vẽ ảnh|hãy vẽ|hãy tạo|tạo cho tôi|vẽ cho tôi|hình ảnh|tạo 1 ảnh|vẽ 1 ảnh)\s+/i, '');
+  en = en.replace(/^(tạo ảnh|vẽ ảnh|hãy vẽ|hãy tạo|tạo cho tôi|vẽ cho tôi|hình ảnh|tạo 1 ảnh|vẽ 1 ảnh|vẽ một bức ảnh|tạo một bức ảnh)\s+/i, '');
 
   const dict = [
-    [/người phụ nữ|phụ nữ|cô gái|cô em|gái xinh|baddie/g, 'beautiful woman'],
-    [/người đàn ông|đàn ông|chàng trai/g, 'handsome man'],
+    [/người phụ nữ|phụ nữ|cô gái|cô em|gái xinh|baddie|em gái/g, 'beautiful woman, 1girl'],
+    [/người đàn ông|đàn ông|chàng trai|trai đẹp/g, 'handsome man, 1boy'],
     [/châu á|người việt|việt nam/g, 'asian, vietnamese'],
-    [/không mặc gì|khỏa thân|nude|cởi hết|không quần áo|trần như nhộng/g, 'naked, nude, full body nude, explicit, bare skin, uncensored'],
-    [/đồ lót|nội y/g, 'lingerie, lace underwear'],
-    [/bikini|áo tắm/g, 'sexy bikini'],
-    [/váy ngắn|chân váy/g, 'mini skirt'],
-    [/áo sơ mi/g, 'shirt'],
+    [/không mặc gì|khỏa thân|nude|cởi hết|không quần áo|trần như nhộng|không mặc đồ|lộ hết/g, 'completely naked, nude, full body nude, explicit, bare skin, bare breasts, bare nipples, uncensored'],
+    [/đồ lót|nội y/g, 'sexy lingerie, lace underwear'],
+    [/bikini|áo tắm/g, 'sexy micro bikini'],
+    [/váy ngắn|chân váy/g, 'tight mini skirt'],
+    [/áo sơ mi/g, 'unbuttoned shirt'],
+    [/đang đứng ở biển|đang đứng biển|đứng ở biển|ở biển|bờ biển|bãi biển|biển/g, 'standing on a tropical sunny beach, ocean background, gentle sea waves, soft golden sand, outdoor natural lighting, full body shot'],
+    [/đang đứng|đứng/g, 'standing, full body standing pose, head to toe shot'],
     [/đang ngồi|ngồi/g, 'sitting, seated, full body shot'],
     [/đang nằm|nằm/g, 'lying down, reclining'],
-    [/đang đứng|đứng/g, 'standing'],
-    [/quỳ|đang quỳ/g, 'kneeling'],
+    [/quỳ|đang quỳ/g, 'kneeling pose'],
     [/nhìn vào ống kính|nhìn thẳng/g, 'looking at camera'],
     [/tự sướng|selfie/g, 'mirror selfie, direct flash'],
     [/nhà vệ sinh công cộng|nhà vệ sinh|toilet/g, 'in a public restroom, ceramic wall tiles, toilet stall, realistic bathroom lighting'],
-    [/bờ biển|bãi biển|biển/g, 'on a tropical beach, ocean background, sunset lighting'],
-    [/phòng ngủ|giường/g, 'in a cozy bedroom, on the bed'],
+    [/phòng ngủ|giường/g, 'in a cozy bedroom, on the bed, warm indoor lighting'],
     [/phòng tắm|bồn tắm/g, 'in a luxurious bathroom, bathtub'],
-    [/khách sạn/g, 'in a hotel room'],
+    [/khách sạn/g, 'in a luxury hotel room'],
     [/đường phố|ngoài đường/g, 'on a city street at night'],
     [/ảnh thật|chân thực|như thật|siêu thực/g, 'photorealistic, raw photo, realistic skin texture, 8k uhd, soft natural lighting']
   ];
@@ -816,7 +826,7 @@ function enhanceAndTranslatePrompt(text) {
   });
 
   if (!en.includes('photorealistic') && !en.includes('photo')) {
-    en = `${en}, photorealistic, raw photo, ultra detailed skin texture, realistic lighting, 8k uhd`;
+    en = `${en}, photorealistic, raw photo, ultra detailed skin texture, realistic natural lighting, 8k uhd`;
   }
   return en;
 }
@@ -887,16 +897,64 @@ function displayResult(item){
   const loading = $('#viewportLoading');
   const result = $('#viewportResult');
   const mainImg = $('#mainResultImg');
+  const batchBar = $('#batchResultsBar');
+  const batchSwitcher = $('#batchSwitcher');
+  const downloadAllBtn = $('#batchDownloadAllBtn');
 
   if (placeholder) placeholder.style.display = 'none';
   if (loading) loading.style.display = 'none';
   if (result) result.style.display = 'flex';
   if (mainImg) mainImg.src = item.image;
 
-  $('#metaModel').textContent = item.model || 'SDXL / Flux';
+  $('#metaModel').textContent = item.model || 'SDXL';
   $('#metaDimensions').textContent = `${item.width || currentWidth} × ${item.height || currentHeight}px`;
   $('#metaElapsed').textContent = item.elapsed_seconds ? `${item.elapsed_seconds}s` : 'N/A';
   $('#metaSeed').textContent = item.seed !== undefined ? item.seed : 'N/A';
+
+  // Quản lý hiển thị Batch khi tạo nhiều ảnh (2, 3, 4 ảnh)
+  const allImages = (item.images && item.images.length > 1) ? item.images : null;
+  const allSeeds = (item.seeds && item.seeds.length > 1) ? item.seeds : null;
+
+  if (batchBar && batchSwitcher) {
+    if (allImages) {
+      batchBar.style.display = 'flex';
+      batchSwitcher.innerHTML = '';
+      allImages.forEach((imgUrl, idx) => {
+        const tabBtn = document.createElement('button');
+        tabBtn.type = 'button';
+        tabBtn.className = `batch-tab ${item.image === imgUrl ? 'active' : ''}`;
+        tabBtn.innerHTML = `<span>Ảnh #${idx + 1}</span>`;
+        tabBtn.onclick = () => {
+          document.querySelectorAll('.batch-tab').forEach(t => t.classList.remove('active'));
+          tabBtn.classList.add('active');
+          if (mainImg) mainImg.src = imgUrl;
+          item.image = imgUrl;
+          if (allSeeds && allSeeds[idx] !== undefined) {
+            item.seed = allSeeds[idx];
+            $('#metaSeed').textContent = allSeeds[idx];
+          }
+        };
+        batchSwitcher.appendChild(tabBtn);
+      });
+
+      if (downloadAllBtn) {
+        downloadAllBtn.onclick = () => {
+          allImages.forEach((imgUrl, i) => {
+            setTimeout(() => {
+              const a = document.createElement('a');
+              a.href = imgUrl;
+              a.download = `ai-image-batch-${i + 1}-${Date.now()}.png`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            }, i * 350);
+          });
+        };
+      }
+    } else {
+      batchBar.style.display = 'none';
+    }
+  }
 
   const dlBtn = $('#downloadImgBtn');
   if (dlBtn) {
@@ -953,7 +1011,7 @@ if (imageGenForm) {
     btn.disabled = true;
     if (btnSpinner) btnSpinner.style.display = 'inline-block';
     if (btnIcon) btnIcon.style.display = 'none';
-    if (btnText) btnText.textContent = 'Đang render trên GPU...';
+    if (btnText) btnText.textContent = currentNumImages > 1 ? `Đang render bộ ${currentNumImages} ảnh...` : 'Đang render trên GPU...';
 
     if (placeholder) placeholder.style.display = 'none';
     if (result) result.style.display = 'none';
@@ -965,7 +1023,7 @@ if (imageGenForm) {
       const sec = ((Date.now() - startTime) / 1000).toFixed(1);
       timerBadge.textContent = `${sec}s`;
       if (sec > 12) {
-        loadingStatusText.textContent = 'Đang hoàn thiện bước khử nhiễu (Denoising steps)...';
+        loadingStatusText.textContent = 'Đang khử nhiễu và xử lý chi tiết (Denoising)...';
       }
     }, 100);
 
@@ -983,6 +1041,7 @@ if (imageGenForm) {
         model_id: $('#imgModelSelect').value,
         init_image: referenceImage || null,
         strength: referenceImage ? Number($('#refStrength')?.value || 0.70) : null,
+        num_images: currentNumImages,
       };
 
       const res = await fetch(`${cfg.SUPABASE_URL}/functions/v1/image`, {
@@ -1002,26 +1061,45 @@ if (imageGenForm) {
         } else {
           try {
             const errData = await res.json();
-            errMessage = errData.error || errMessage;
+            errMessage = errData.error || errData.detail || errMessage;
           } catch {}
         }
         throw new Error(errMessage);
       }
 
       const data = await res.json();
-      if (!data.image) throw new Error('Không nhận được dữ liệu ảnh trả về từ GPU.');
+      if (!data.image && (!data.images || !data.images.length)) {
+        throw new Error('Không nhận được dữ liệu ảnh trả về từ GPU.');
+      }
+
+      const imgs = (data.images && data.images.length) ? data.images : [data.image];
+      const seeds = (data.seeds && data.seeds.length) ? data.seeds : [data.seed];
 
       const item = {
-        image: data.image,
+        image: imgs[0],
+        images: imgs,
+        seeds: seeds,
         prompt: promptText,
-        seed: data.seed,
+        seed: seeds[0],
         elapsed_seconds: data.elapsed_seconds,
         model: data.model || payload.model_id,
         width: data.width || currentWidth,
         height: data.height || currentHeight,
       };
 
-      recentImages.unshift(item);
+      // Đẩy tất cả ảnh được tạo vào danh sách phiên để người dùng lưu lại
+      imgs.forEach((imgUrl, i) => {
+        recentImages.unshift({
+          image: imgUrl,
+          prompt: imgs.length > 1 ? `${promptText} (Ảnh #${i + 1})` : promptText,
+          seed: seeds[i] !== undefined ? seeds[i] : data.seed,
+          elapsed_seconds: data.elapsed_seconds,
+          model: data.model || payload.model_id,
+          width: data.width || currentWidth,
+          height: data.height || currentHeight,
+        });
+      });
+
       saveRecentImages();
       renderGallery();
       displayResult(item);

@@ -98,10 +98,10 @@
               <label for="imgModelSelect">Model tạo ảnh</label>
               <div class="select-wrap">
                 <select id="imgModelSelect">
-                  <option value="SG161222/RealVisXL_V5.0" selected>👑 RealVisXL V5.0 (Ảnh thật / Chân dung siêu nét / Uncensored)</option>
-                  <option value="AstraliteHeart/pony-diffusion-v6-xl">🔥 Pony Diffusion V6 XL (Vua Uncensored / Mọi tư thế / Anime & 2.5D)</option>
-                  <option value="black-forest-labs/FLUX.1-schnell">⚡ FLUX.1 [schnell] (Siêu tốc 4 steps / Ánh sáng chân thực)</option>
-                  <option value="black-forest-labs/FLUX.1-dev">💎 FLUX.1 [dev] (Chất lượng cao nhất / Bàn tay & chi tiết đỉnh cao)</option>
+                  <option value="SG161222/RealVisXL_V5.0" selected>👑 RealVisXL V5.0 (Ảnh thật / Chân dung & Toàn thân siêu nét / Uncensored)</option>
+                  <option value="RunDiffusion/Juggernaut-XL-v9">🎬 Juggernaut XL V9 (Điện ảnh / Ánh sáng chân thực đỉnh cao)</option>
+                  <option value="yodayo-ai/clandestine-xl-1.0">🔥 Clandestine XL (Chuyên sâu Uncensored 18+ / Mọi tư thế & 2.5D)</option>
+                  <option value="cagliostrolab/animagine-xl-3.1">🌸 Animagine XL 3.1 (Anime & Manga chi tiết sắc nét)</option>
                 </select>
               </div>
             </div>
@@ -130,6 +130,17 @@
                   <span class="ratio-name">3:4</span>
                   <span class="ratio-dim">864x1152</span>
                 </button>
+              </div>
+            </div>
+
+            <!-- Số lượng ảnh cần tạo (Batch Size) -->
+            <div class="form-group">
+              <label>Số lượng ảnh cần tạo một lần</label>
+              <div class="batch-grid" id="batchGrid">
+                <button type="button" class="batch-btn active" data-n="1">1 ảnh</button>
+                <button type="button" class="batch-btn" data-n="2">2 ảnh</button>
+                <button type="button" class="batch-btn" data-n="3">3 ảnh</button>
+                <button type="button" class="batch-btn" data-n="4">4 ảnh (Grid)</button>
               </div>
             </div>
 
@@ -171,6 +182,11 @@
                   </div>
                   <input type="range" id="refStrength" min="0.3" max="0.9" value="0.70" step="0.05">
                 </div>
+
+                <div class="ref-guidance-tip">
+                  <span class="tip-icon">💡</span>
+                  <span><b>Tạo toàn thân:</b> Nếu ảnh mẫu là cận mặt (selfie), AI sẽ bám theo khung hình khuôn mặt. Để vẽ dáng <b>toàn thân (đứng/ngồi ở biển, phòng tắm...)</b>, hãy bấm <b>Gỡ ảnh mẫu</b> để AI tạo tự do theo Prompt hoặc kéo thanh bám ảnh mẫu lên 80%!</span>
+                </div>
               </div>
             </div>
 
@@ -182,7 +198,6 @@
                 <span class="magic-icon">✨</span>
                 <span>Hệ thống tự động dịch tiếng Việt sang thẻ tiếng Anh chuẩn Studio (Full body, Uncensored, Lighting...)</span>
               </div>
-            </div>
             </div>
 
             <!-- Negative Prompt -->
@@ -239,6 +254,12 @@
 
             <!-- Kết quả ảnh chính -->
             <div class="viewport-result" id="viewportResult" style="display:none;">
+              <!-- Thanh điều hướng bộ ảnh (Khi tạo 2, 3, 4 ảnh) -->
+              <div class="batch-results-bar" id="batchResultsBar" style="display:none;">
+                <div class="batch-switcher" id="batchSwitcher"></div>
+                <button type="button" class="batch-download-all" id="batchDownloadAllBtn">⬇ Tải toàn bộ ảnh</button>
+              </div>
+
               <div class="result-image-box">
                 <img id="mainResultImg" src="" alt="Ảnh AI đã tạo">
                 <div class="result-overlay">

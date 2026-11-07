@@ -97,6 +97,25 @@
 .prompt-hint{display:flex;align-items:center;gap:6px;font-size:11px;color:#c084fc;background:#241935;border:1px solid #a855f740;padding:6px 10px;border-radius:8px;margin-top:2px;line-height:1.4}
 .magic-icon{font-size:13px}
 
+/* Batch Grid Controls */
+.batch-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.batch-btn{height:36px;background:#242429;border:1px solid #383842;border-radius:8px;color:#c9c9d5;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s ease}
+.batch-btn:hover{background:#2e2e36;border-color:#a855f7;color:#fff}
+.batch-btn.active{background:#321e4a;border-color:#a855f7;color:#f3e8ff;box-shadow:0 0 10px #a855f730}
+
+/* Batch Results Bar in Viewport */
+.batch-results-bar{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;width:100%}
+.batch-switcher{display:flex;gap:8px;background:#18181b;padding:4px;border-radius:10px;border:1px solid #2e2e36}
+.batch-tab{background:transparent;border:0;color:#9b9ba8;font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .15s}
+.batch-tab:hover{color:#fff;background:#27272e}
+.batch-tab.active{background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;box-shadow:0 2px 8px #a855f740}
+.batch-download-all{background:#2a2a32;border:1px solid #434350;color:#e1e1ec;font-size:12px;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s}
+.batch-download-all:hover{background:#363642;color:#fff;border-color:#a855f7}
+
+/* Helper note for reference image */
+.ref-guidance-tip{background:#1f1c2b;border:1px solid #7c3aed40;border-radius:8px;padding:8px 10px;font-size:11px;color:#d8b4fe;line-height:1.45;margin-top:8px;display:flex;align-items:flex-start;gap:6px}
+.ref-guidance-tip .tip-icon{font-size:13px;flex-shrink:0}
+
 /* Accordion Nâng cao */
 .advanced-settings{background:#1c1c1f;border:1px solid #323238;border-radius:10px;padding:10px 12px}
 .advanced-settings summary{font-size:12px;font-weight:600;color:#b4b4bf;cursor:pointer;outline:none;user-select:none}
