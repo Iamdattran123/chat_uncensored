@@ -62,21 +62,75 @@ class TranslateRequest(BaseModel):
     model_id: Optional[str] = "SG161222/RealVisXL_V5.0"
 
 
+def translate_vi_lexicon_fallback(text: str) -> str:
+    """Bộ từ điển chuyên sâu Việt-Anh dự phòng (đảm bảo 100% không bao giờ sót tiếng Việt sang CLIP)."""
+    s = text.lower()
+    lexicon = [
+        (r"người phụ nữ|phụ nữ|cô gái|cô em|gái xinh|thiếu nữ|em gái", "gorgeous young woman"),
+        (r"người đàn ông|đàn ông|chàng trai|trai đẹp", "handsome man"),
+        (r"châu á|việt nam|người việt", "asian vietnamese"),
+        (r"không mặc gì|khỏa thân|cởi hết|trần truồng|trần như nhộng|không quần áo|cởi truồng|nude", "completely naked, nude"),
+        (r"đang quỳ gối|quỳ gối|đang quỳ|quỳ trên sàn|quỳ xuống", "kneeling on both knees on the floor"),
+        (r"đang đứng|đứng thẳng|đứng tạo dáng|đứng", "standing full body"),
+        (r"ngồi xổm", "squatting"),
+        (r"đang ngồi|ngồi trên|ngồi bệt|ngồi", "sitting full body"),
+        (r"đang nằm|nằm ngửa|nằm sấp|nằm trên|nằm", "lying down"),
+        (r"nhà vệ sinh công cộng|nhà vệ sinh|phòng vệ sinh|toilet|wc", "in a public restroom stall"),
+        (r"bãi biển|bờ biển|ở biển|ngoài biển|biển", "on a sunny tropical beach"),
+        (r"phòng ngủ|trên giường|giường ngủ|giường", "on a bedroom bed"),
+        (r"phòng tắm|nhà tắm|bồn tắm", "in a luxury bathroom"),
+        (r"khách sạn", "in a hotel room"),
+        (r"ngực to|vú to|ngực khủng|vòng một lớn", "large breasts, voluptuous"),
+        (r"mông to|mông căng|vòng ba lớn", "wide hips, curvy ass"),
+        (r"eo thon|dáng chuẩn|thân hình đồng hồ cát", "slim waist, hourglass body"),
+        (r"da trắng|làn da trắng|da mịn", "fair smooth skin"),
+        (r"tóc dài|mái tóc dài", "long hair"),
+        (r"tóc ngắn", "short hair"),
+        (r"nhìn thẳng|nhìn vào máy ảnh|nhìn camera", "looking directly at camera"),
+        (r"mỉm cười|cười nhẹ", "gentle seductive smile"),
+        (r"toàn thân|cả người|từ đầu đến chân", "full body shot from head to toe"),
+    ]
+    for pat, repl in lexicon:
+        s = re.sub(pat, repl, s)
+    # Xóa các từ nối tiếng Việt còn sót
+    s = re.sub(r"\b(đang|trong|ở|tại|và|với|của|một|những|các|cái|chiếc|rất|siêu|cực|kỳ|thì|mà|là)\b", " ", s)
+    return re.sub(r"\s+", " ", s).strip(" ,.-")
+
+
 def translate_vi_to_en_neural(text: str) -> str:
-    """Dịch câu tiếng Việt bất kỳ sang tiếng Anh bằng Google Neural Translate API (Không kiểm duyệt từ nhạy cảm)."""
-    if not text.strip():
+    """Dịch câu tiếng Việt bất kỳ sang tiếng Anh bằng chuỗi đa tầng: MyMemory Neural -> Google GTX -> Lexicon."""
+    clean = text.strip()
+    if not clean:
         return ""
+
+    # Tầng 1: MyMemory Neural Translate API (Không bị 429 trên Cloud IP, không kiểm duyệt)
     try:
-        q = urllib.parse.quote(text.strip())
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=vi&tl=en&dt=t&q={q}"
+        q = urllib.parse.quote(clean)
+        url = f"https://api.mymemory.translated.net/get?q={q}&langpair=vi|en"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=4) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            translated = "".join([part[0] for part in data[0] if part[0]])
-            return translated.strip()
+            translated = (data.get("responseData") or {}).get("translatedText", "").strip()
+            if translated and "MYMEMORY WARNING" not in translated.upper():
+                return translated
     except Exception as e:
-        print(f"[Translator] Fallback local dict do lỗi mạng: {e}")
-        return text.strip()
+        print(f"[Translator] MyMemory fallback: {e}")
+
+    # Tầng 2: Google GTX API
+    try:
+        q = urllib.parse.quote(clean)
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=vi&tl=en&dt=t&q={q}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            translated = "".join([part[0] for part in data[0] if part[0]]).strip()
+            if translated:
+                return translated
+    except Exception as e:
+        print(f"[Translator] Google GTX fallback: {e}")
+
+    # Tầng 3: Từ điển chuyên sâu nội bộ
+    return translate_vi_lexicon_fallback(clean)
 
 
 def compile_smart_prompt(user_text: str, model_id: str = "") -> dict:

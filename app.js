@@ -815,18 +815,67 @@ if (refStrength && strengthVal) {
 // =========================================================================
 let manualCompiledOverride = false;
 
+function translateViLexiconFallback(text) {
+  let s = (text || '').toLowerCase();
+  const lexicon = [
+    [/người phụ nữ|phụ nữ|cô gái|cô em|gái xinh|thiếu nữ|em gái/g, 'gorgeous young woman'],
+    [/người đàn ông|đàn ông|chàng trai|trai đẹp/g, 'handsome man'],
+    [/châu á|việt nam|người việt/g, 'asian vietnamese'],
+    [/không mặc gì|khỏa thân|cởi hết|trần truồng|trần như nhộng|không quần áo|cởi truồng|nude/g, 'completely naked, nude'],
+    [/đang quỳ gối|quỳ gối|đang quỳ|quỳ trên sàn|quỳ xuống/g, 'kneeling on both knees on the floor'],
+    [/đang đứng|đứng thẳng|đứng tạo dáng|đứng/g, 'standing full body'],
+    [/ngồi xổm/g, 'squatting'],
+    [/đang ngồi|ngồi trên|ngồi bệt|ngồi/g, 'sitting full body'],
+    [/đang nằm|nằm ngửa|nằm sấp|nằm trên|nằm/g, 'lying down'],
+    [/nhà vệ sinh công cộng|nhà vệ sinh|phòng vệ sinh|toilet|wc/g, 'in a public restroom stall'],
+    [/bãi biển|bờ biển|ở biển|ngoài biển|biển/g, 'on a sunny tropical beach'],
+    [/phòng ngủ|trên giường|giường ngủ|giường/g, 'on a bedroom bed'],
+    [/phòng tắm|nhà tắm|bồn tắm/g, 'in a luxury bathroom'],
+    [/khách sạn/g, 'in a hotel room'],
+    [/ngực to|vú to|ngực khủng|vòng một lớn/g, 'large breasts, voluptuous'],
+    [/mông to|mông căng|vòng ba lớn/g, 'wide hips, curvy ass'],
+    [/eo thon|dáng chuẩn|thân hình đồng hồ cát/g, 'slim waist, hourglass body'],
+    [/da trắng|làn da trắng|da mịn/g, 'fair smooth skin'],
+    [/tóc dài|mái tóc dài/g, 'long hair'],
+    [/tóc ngắn/g, 'short hair'],
+    [/nhìn thẳng|nhìn vào máy ảnh|nhìn camera/g, 'looking directly at camera'],
+    [/mỉm cười|cười nhẹ/g, 'gentle seductive smile'],
+    [/toàn thân|cả người|từ đầu đến chân/g, 'full body shot from head to toe']
+  ];
+  lexicon.forEach(([rgx, repl]) => { s = s.replace(rgx, repl); });
+  s = s.replace(/\b(đang|trong|ở|tại|và|với|của|một|những|các|cái|chiếc|rất|siêu|cực|kỳ|thì|mà|là)\b/g, ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 async function googleNeuralTranslateViToEn(text) {
   const clean = (text || '').trim();
   if (!clean) return '';
+  // Tầng 1: MyMemory Neural Translate API
+  try {
+    const mmUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(clean)}&langpair=vi|en`;
+    const mmRes = await fetch(mmUrl);
+    if (mmRes.ok) {
+      const mmData = await mmRes.json();
+      const tr = (mmData?.responseData?.translatedText || '').trim();
+      if (tr && !tr.toUpperCase().includes('MYMEMORY WARNING')) {
+        return tr;
+      }
+    }
+  } catch {}
+
+  // Tầng 2: Google GTX API
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=vi&tl=en&dt=t&q=${encodeURIComponent(clean)}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error('Translate HTTP ' + res.status);
-    const data = await res.json();
-    return (data[0] || []).map(part => part[0] || '').join('').trim();
-  } catch {
-    return clean;
-  }
+    if (res.ok) {
+      const data = await res.json();
+      const tr = (data[0] || []).map(part => part[0] || '').join('').trim();
+      if (tr) return tr;
+    }
+  } catch {}
+
+  // Tầng 3: Từ điển chuyên sâu nội bộ
+  return translateViLexiconFallback(clean);
 }
 
 async function smartCompileVietnamesePrompt(rawText, modelId = '') {
