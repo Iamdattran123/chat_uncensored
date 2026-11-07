@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Khung Chat & Studio Tạo Ảnh — Local AI</title><link rel="stylesheet" href="./styles.css?v=3.0">
+<title>Khung Chat & Studio Tạo Ảnh — Local AI</title><link rel="stylesheet" href="./styles.css?v=3.1">
 </head>
 <body>
 <div class="app">
@@ -33,7 +33,7 @@
         <button class="mode-tab" id="tabImage" type="button" data-mode="image">
           <span class="tab-icon">🎨</span>
           <span>Tạo Hình Ảnh</span>
-          <span class="admin-badge">Admin</span>
+          <span class="admin-badge" style="background:#a855f7;color:#fff;">Studio</span>
         </button>
       </div>
       <div class="top-actions">
@@ -328,7 +328,7 @@
 <div class="auth-overlay" id="authOverlay"><section class="auth-card"><div class="welcome-symbol">✳</div><h1>Đăng nhập</h1><p>Lịch sử và quyền truy cập được lưu theo tài khoản của bạn.</p><form id="loginForm"><label>Email<input id="emailInput" type="email" autocomplete="username" required placeholder="you@example.com"></label><label>Mật khẩu<input id="passwordInput" type="password" autocomplete="current-password" required minlength="8" placeholder="••••••••"></label><button class="done-btn" type="submit" id="loginBtn">Đăng nhập</button><div class="auth-error" id="authError"></div></form><small>Tài khoản được tạo riêng bởi quản trị viên.</small></section></div>
 
 <!-- Modal Thông Tin Cấu Hình -->
-<div class="overlay" id="overlay"><section class="modal"><button class="modal-x" id="closeModal">×</button><div class="modal-icon">⌘</div><h2>Cấu hình Kết nối AI</h2><p class="modal-lead">Inference được phân luồng qua Supabase Edge Functions. Token Modal bảo mật tuyệt đối ở máy chủ.</p><div class="config-state"><span class="state-indicator"></span><span id="syncLabel">Đăng nhập để đồng bộ lịch sử riêng.</span></div><div class="code-box"><div><span>Trò chuyện</span><code>Supabase Edge Function: /chat</code></div><div><span>Tạo ảnh Uncensored</span><code>Supabase Edge Function: /image (Độc quyền datviphero@)</code></div><div><span>GPU Inference</span><code>Modal Serverless GPU (Scale-to-zero)</code></div></div><p class="modal-foot">Xem <b>README.md</b> để cập nhật cấu hình secrets.</p><button class="done-btn" id="doneBtn">Đã hiểu</button></section></div>
+<div class="overlay" id="overlay"><section class="modal"><button class="modal-x" id="closeModal">×</button><div class="modal-icon">⌘</div><h2>Cấu hình Kết nối AI</h2><p class="modal-lead">Inference được phân luồng qua Supabase Edge Functions. Token Modal bảo mật tuyệt đối ở máy chủ.</p><div class="config-state"><span class="state-indicator"></span><span id="syncLabel">Đăng nhập để đồng bộ lịch sử riêng.</span></div><div class="code-box"><div><span>Trò chuyện</span><code>Supabase Edge Function: /chat</code></div><div><span>Tạo ảnh Uncensored</span><code>Supabase Edge Function: /image (Mở khóa toàn bộ tài khoản)</code></div><div><span>GPU Inference</span><code>Modal Serverless GPU (Scale-to-zero)</code></div></div><p class="modal-foot">Xem <b>README.md</b> để cập nhật cấu hình secrets.</p><button class="done-btn" id="doneBtn">Đã hiểu</button></section></div>
 
-<script src="./config.js?v=3.0"></script><script src="./app.js?v=3.0"></script>
+<script src="./config.js?v=3.1"></script><script src="./app.js?v=3.1"></script>
 </body></html>

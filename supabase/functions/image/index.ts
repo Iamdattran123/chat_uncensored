@@ -49,15 +49,8 @@ Deno.serve(async (req) => {
     );
   }
 
-  // 2. Bảo mật độc quyền: CHỈ DUY NHẤT datviphero@gmail.com
-  if (!isAuthorizedAdmin(user.email)) {
-    return new Response(
-      JSON.stringify({
-        error: "Quyền truy cập bị từ chối: Tính năng Tạo Ảnh độc quyền chỉ dành riêng cho tài khoản " + AUTHORIZED_ADMIN,
-      }),
-      { status: 403, headers: { ...cors, "Content-Type": "application/json" } }
-    );
-  }
+// 2. Cho phép tất cả các tài khoản người dùng đã đăng nhập hợp lệ
+  // Không giới hạn độc quyền nữa, mọi tài khoản đều có thể sử dụng Studio Tạo Ảnh
 
   // 3. Đọc dữ liệu yêu cầu tạo ảnh
   let body: any = {};

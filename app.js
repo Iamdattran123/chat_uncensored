@@ -495,27 +495,16 @@ async function bootUser(){
     $('#profileEmail').textContent = userEmail || 'Tài khoản';
     hideAuth();
 
-    // BẢO MẬT: Chỉ tài khoản datviphero@gmail.com mới thấy Tab Tạo Ảnh & Mode Switcher
-    const isAdmin = checkIsAdmin(userEmail);
+    // Cho phép TẤT CẢ các tài khoản hợp lệ sử dụng Studio Tạo Ảnh & Mode Switcher
     const modeSwitcher = $('#modeSwitcher');
     const modelSelect = $('#modelSelect');
     const btnImage = $('#tabImage');
 
-    if (isAdmin) {
-      if (modeSwitcher) modeSwitcher.style.display = 'flex';
-      if (modelSelect) modelSelect.style.display = 'none';
-      if (btnImage) {
-        btnImage.hidden = false;
-        btnImage.style.display = 'flex';
-      }
-    } else {
-      if (modeSwitcher) modeSwitcher.style.display = 'none';
-      if (modelSelect) modelSelect.style.display = 'flex';
-      if (btnImage) {
-        btnImage.hidden = true;
-        btnImage.style.display = 'none';
-      }
-      currentMode = 'chat';
+    if (modeSwitcher) modeSwitcher.style.display = 'flex';
+    if (modelSelect) modelSelect.style.display = 'none';
+    if (btnImage) {
+      btnImage.hidden = false;
+      btnImage.style.display = 'flex';
     }
     updateModeUI();
 
@@ -1219,8 +1208,9 @@ if (imageGenForm) {
     }
 
     const currentEmail = getEmailFromSession();
-    if (!checkIsAdmin(currentEmail)) {
-      window.alert('Quyền truy cập bị từ chối: Chỉ tài khoản datviphero@gmail.com mới được phép tạo ảnh.');
+    if (!currentEmail && !session) {
+      window.alert('Vui lòng đăng nhập để sử dụng Studio Tạo Ảnh.');
+      showAuth();
       return;
     }
 
